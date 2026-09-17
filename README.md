@@ -162,8 +162,8 @@
 |`appdrive.*` **(File + Pack)**|✅️|**Unknown**|
 |`drivefire.co`|✅️|**Unknown**|
 |`*.gdflix.*`**(File + Pack)**|❌️|**Unknown**|
-✅️|**Unknown**|
-|`hubdrive.lat` **(Instant Link)**|
+|`hubdrive.*` **(via HubCloud — FSLv2, FSL, ZipDisk, Pixeldrain, Buzz servers)**|✅️|**17-09-2026**|
+|`hubcloud.*` **(Direct — all download servers)**|✅️|**17-09-2026**|
 |`katdrive.org` **(Direct Download)**|✅️|**Unknown**|
 |`new*.gdtot.zip`|️❌️| **Unknown**|
 |`new*.filepress.store` + `filebee.xyz` + `onlystream.xyz` + `pressbee.xyz`**( Only Tg Links )**|✅️|**Unknown**|
@@ -256,7 +256,7 @@ Set `TERA_COOKIE` to your Terabox `ndus` cookie value. The bot will use this if 
 - `AUTO_BYPASS`: Change between Command Mode or Auto Bypass Mode. Default is False.
 - `CMD_SUFFIX`: Suffix added to every bot command, useful when running many bots in one chat. Example: `1` makes `/bypass` become `/bypass1`. Default is empty.
 - `GDTOT_CRYPT`: GdToT Crypt (Optional). It works with & without Crypt!
-- `HUBDRIVE_CRYPT`: HubDrive Crypt (Optional), It works with or without Cookie, Get from Cookie Editor Extension.
+- `HUBDRIVE_CRYPT`: No longer required. HubDrive is now bypassed via HubCloud — no cookie needed.
 - `KATDRIVE_CRYPT`: KatDrive Crypt (Optional), It works with or without Cookie, Get from Cookie Editor Extension.
 - `DRIVEFIRE_CRYPT`: DriveFire Crypt, Get from Cookie Editor Extension.
 - `DIRECT_INDEX`: Direct Fast Download GDrive Links.
