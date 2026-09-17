@@ -161,7 +161,7 @@
 |:------------:|:----------:|:----------------:|
 |`appdrive.*` **(File + Pack)**|✅️|**Unknown**|
 |`drivefire.co`|✅️|**Unknown**|
-|`*.gdflix.*`**(File + Pack)**|❌️|**Unknown**|
+|`*.gdflix.*` + `gdflix.dev` **(R2, PixelDrain, GoFile, Direct Server — all buttons)**|✅️|**17-09-2026**|
 |`hubdrive.*` **(via HubCloud — FSLv2, FSL, ZipDisk, Pixeldrain, Buzz servers)**|✅️|**17-09-2026**|
 |`hubcloud.*` **(Direct — all download servers)**|✅️|**17-09-2026**|
 |`katdrive.org` **(Direct Download)**|✅️|**Unknown**|
