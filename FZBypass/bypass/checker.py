@@ -33,7 +33,7 @@ def is_share_link(url):
 def is_excep_link(url):
     return bool(
         match(
-            r"https?:\/\/.+\.(1tamilmv|gdtot|filepress|pressbee|gdflix|sharespark)\.\S+|https?:\/\/(sharer|onlystream|hubdrive|katdrive|drivefire|skymovieshd|toonworld4all|kayoanime|cinevood|gdflix|filepress|pressbee|filebee|appdrive)\.\S+",
+            r"https?:\/\/.+\.(1tamilmv|gdtot|filepress|pressbee|gdflix|sharespark)\.\S+|https?:\/\/(sharer|onlystream|hubdrive|hubcloud|katdrive|drivefire|skymovieshd|toonworld4all|kayoanime|cinevood|gdflix|filepress|pressbee|filebee|appdrive)\.\S+",
             url,
         )
     )
@@ -414,6 +414,8 @@ async def direct_link_checker(link, onlylink=False):
         return await tamilmv(link)
 
     # DL Links
+    elif bool(match(r"https?:\/\/hubcloud\.\S+", link)):
+        return await hubcloud(link)
     elif bool(match(r"https?:\/\/hubdrive\.\S+", link)):
         return await drivescript(link, Config.HUBDRIVE_CRYPT, "HubDrive")
     elif bool(match(r"https?:\/\/katdrive\.\S+", link)):

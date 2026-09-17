@@ -124,9 +124,39 @@ async def gdtot(url):
 async def drivescript(url, crypt, dtype):
     rs = Session()
     resp = rs.get(url)
-    title = findall(r">(.*?)<\/h4>", resp.text)[0]
-    size = findall(r">(.*?)<\/td>", resp.text)[1]
     p_url = urlparse(url)
+
+    # HubDrive redesigned — extract HubCloud link and resolve it directly
+    if dtype == "HubDrive":
+        soup = BeautifulSoup(resp.text, "html.parser")
+        h6 = soup.find("h6", class_="font-weight-bold")
+        title = h6.text.strip() if h6 else (
+            soup.title.string.replace("HubDrive | ", "").strip() if soup.title else "Unknown"
+        )
+        tds = soup.select("td")
+        size = tds[1].text.strip() if len(tds) > 1 else "Unknown"
+        hc_tag = soup.find("a", href=lambda h: h and "hubcloud" in h)
+        if hc_tag:
+            try:
+                return await hubcloud(hc_tag["href"])
+            except Exception:
+                pass
+        parse_txt = (
+            f"┏<b>Name:</b> <code>{title}</code>\n"
+            f"┠<b>Size:</b> <code>{size}</code>\n"
+            f"┠<b>HubDrive:</b> <a href=\"{url}\">Click Here</a>"
+        )
+        if hc_tag:
+            parse_txt += f"\n┗<b>HubCloud:</b> <a href=\"{hc_tag['href']}\">Click Here</a>"
+        else:
+            parse_txt += "\n┗<b>Note:</b> Login required for GDrive link"
+        return parse_txt
+
+    # KatDrive / DriveFire — original logic
+    titles = findall(r">(.*?)<\/h4>", resp.text)
+    sizes = findall(r">(.*?)<\/td>", resp.text)
+    title = titles[0] if titles else "Unknown"
+    size = sizes[1] if len(sizes) > 1 else (sizes[0] if sizes else "Unknown")
 
     dlink = ""
     if dtype != "DriveFire":
@@ -161,22 +191,111 @@ async def drivescript(url, crypt, dtype):
         parse_txt = f"""┏<b>Name:</b> <code>{title}</code>
 ┠<b>Size:</b> <code>{size}</code>
 ┠<b>{dtype}:</b> <a href="{url}">Click Here</a>"""
-        if dtype == "HubDrive":
-            parse_txt += (
-                f"""\n┠<b>Instant:</b> <a href="{gd_data[1]['href']}">Click Here</a>"""
-            )
-        if (d_link := gd_data[0]["href"]) and Config.DIRECT_INDEX:
-            parse_txt += (
-                f"\n┠<b>Temp Index:</b> <a href='{get_dl(d_link)}'>Click Here</a>"
-            )
+        if (d_link := gd_data[0]["href"] if gd_data else None) and Config.DIRECT_INDEX:
+            parse_txt += f"\n┠<b>Temp Index:</b> <a href='{get_dl(d_link)}'>Click Here</a>"
         parse_txt += f"\n┗<b>GDrive:</b> <a href='{d_link}'>Click Here</a>"
         return parse_txt
     elif not dlink and not crypt:
-        raise DDLException(
-            f"{dtype} Crypt Not Provided and Direct Link Generate Failed"
-        )
+        raise DDLException(f"{dtype} Crypt Not Provided and Direct Link Generate Failed")
     else:
         raise DDLException(f'{js_query["file"]}')
+
+
+async def hubcloud(url: str) -> str:
+    """
+    Two-step bypass for hubcloud.ist share links.
+    Step 1: GET hubcloud.ist/drive/<id>  → extract gamerxyt.com URL from page JS
+    Step 2: GET gamerxyt.com/hubcloud.php?...  → parse all download buttons generically
+    Returns formatted text with all available server links.
+    """
+    from re import search as _search
+    from urllib.parse import urlparse as _up
+    from aiohttp import ClientTimeout
+
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    headers = {"User-Agent": ua}
+    timeout = ClientTimeout(total=30)
+
+    async with ClientSession(timeout=timeout) as sess:
+        async with sess.get(url, headers=headers, allow_redirects=True) as r1:
+            html1 = await r1.text()
+
+        m = _search(r"var url = '(https://gamerxyt\.com/hubcloud\.php[^']+)'", html1)
+        if m:
+            ajax_url = m.group(1)
+        else:
+            soup1 = BeautifulSoup(html1, "html.parser")
+            dl = soup1.find("a", id="download")
+            if not dl or not dl.get("href"):
+                raise DDLException("HubCloud: could not find download URL in page")
+            ajax_url = dl["href"]
+
+        async with sess.get(
+            ajax_url,
+            headers={**headers, "Referer": "https://hubcloud.ist/"},
+            allow_redirects=True,
+        ) as r2:
+            html2 = await r2.text()
+
+    soup2 = BeautifulSoup(html2, "html.parser")
+
+    size_el = soup2.find(id="size")
+    if size_el and size_el.text.strip() in ("NAN", "NAN "):
+        raise DDLException("HubCloud: token expired — retry")
+
+    title = soup2.find("title")
+    filename = title.text.strip() if title else "Unknown"
+    size_text = size_el.text.strip() if size_el else "Unknown"
+
+    EXCLUDED_HOSTS = {
+        "hubcloud.ist", "hubcloud.cx", "hubcloud.club", "hubcloud.fans",
+        "hubcloud.lat", "gamerxyt.com", "tinyurl.com", "t.me",
+        "snvhost.com", "one.one.one.one", "hdhub4u.ms", "www.google.com",
+    }
+
+    def _label(href: str) -> str:
+        host = _up(href).hostname or ""
+        if "pongala" in host or "lenin.buzz" in host:
+            return "FSLv2 Server"
+        if "r2.cloudflarestorage.com" in host:
+            return "FSL Server"
+        if "storage.googleapis.com" in host:
+            return "ZipDisk Server"
+        if "pixeldrain" in host:
+            return "Pixeldrain"
+        if "fuckingfast.net" in host:
+            return "Buzz Server"
+        return host.replace("www.", "").split(".")[0].capitalize() + " Server"
+
+    seen, links = set(), []
+    for a in soup2.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href.startswith("https://"):
+            continue
+        host = _up(href).hostname or ""
+        if not host or host in EXCLUDED_HOSTS:
+            continue
+        cls = " ".join(a.get("class", []))
+        if "btn" not in cls:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+        links.append((_label(href), href))
+
+    if not links:
+        raise DDLException("HubCloud: no download links found")
+
+    lines = [
+        f"┏<b>Name:</b> <code>{filename}</code>",
+        f"┠<b>Size:</b> <code>{size_text}</code>",
+        f"┠<b>HubCloud:</b> <a href=\"{url}\">Source</a>",
+    ]
+    for i, (label, link) in enumerate(links):
+        prefix = "┗" if i == len(links) - 1 else "┠"
+        lines.append(f"{prefix}<b>{label}:</b> <a href=\"{link}\">Click Here</a>")
+
+    return "\n".join(lines)
 
 
 async def appflix(url):
