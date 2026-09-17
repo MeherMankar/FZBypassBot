@@ -72,48 +72,264 @@ async def shrdsk(url: str) -> str:
     raise DDLException("No Direct Link Found")
 
 
-async def terabox(url: str) -> str:
-    sess = Session()
+async def terabox(url: str) -> list:
+    """
+    Resolve a Terabox share URL to a list of direct download links.
 
-    def retryme(url):
-        while True:
-            try:
-                return sess.get(url)
-            except:
-                pass
+    Strategy (in order):
+      1. If TERABOX_API_URL is configured, POST to its /download endpoint.
+         Returns proxy_url links (no cookie needed to download).
+         On any failure, falls through to Path 2.
+      2. Direct WAP bypass using TERA_COOKIE.
+         Returns raw dlinks (needs ndus cookie to download).
+      If neither is configured/working, raises DDLException.
+    """
+    import json as _json
+    import re as _re
 
-    url = retryme(url).url
-    key = url.split("?surl=")[-1]
-    url = f"http://www.terabox.com/wap/share/filelist?surl={key}"
-    sess.cookies.update({"ndus": Config.TERA_COOKIE})
+    # ------------------------------------------------------------------
+    # Path 1: terabox-downloader-api (preferred)
+    # ------------------------------------------------------------------
+    if Config.TERABOX_API_URL:
+        try:
+            async with ClientSession() as session:
+                async with session.post(
+                    f"{Config.TERABOX_API_URL}/download",
+                    json={"url": url},
+                    headers={"Content-Type": "application/json"},
+                    timeout=30,
+                ) as resp:
+                    data = await resp.json()
 
-    res = retryme(url)
-    key = res.url.split("?surl=")[-1]
-    soup = BeautifulSoup(res.content, "lxml")
-    jsToken = None
+            if data.get("status") == "success":
+                files = data["data"].get("files", [])
+                # Prefer proxy_url (no cookie needed) over raw dlink
+                links = [
+                    f.get("proxy_url") or f.get("dlink")
+                    for f in files
+                    if f.get("proxy_url") or f.get("dlink")
+                ]
+                if links:
+                    return links
+            # API returned an error or empty result — fall through to cookie path
+        except Exception:
+            pass  # Network/timeout error — fall through to cookie path
 
-    for fs in soup.find_all("script"):
-        fstring = fs.string
-        if fstring and fstring.startswith("try {eval(decodeURIComponent"):
-            jsToken = fstring.split("%22")[1]
+    # ------------------------------------------------------------------
+    # Path 2: Direct WAP bypass using TERA_COOKIE (fallback)
+    # ------------------------------------------------------------------
+    if not Config.TERA_COOKIE:
+        raise DDLException(
+            "Terabox: set TERABOX_API_URL (recommended) or TERA_COOKIE to bypass"
+        )
 
-    res = retryme(
-        f"https://www.terabox.com/share/list?app_id=250528&jsToken={jsToken}&shorturl={key}&root=1"
+    TERABOX_DOMAINS = [
+        ".terabox.com", ".1024terabox.com", ".teraboxapp.com",
+        ".nephobox.com", ".4funbox.co", ".mirrobox.com",
+        ".momerybox.com", ".terasharefile.com", ".freeterabox.com",
+    ]
+    TERABOX_HOSTNAMES = [
+        "www.terabox.com", "www.1024terabox.com", "www.teraboxapp.com",
+        "www.terasharefile.com", "www.nephobox.com", "www.4funbox.co",
+        "www.mirrobox.com", "www.momerybox.com", "www.freeterabox.com",
+    ]
+    MOBILE_UA = (
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     )
-    result = res.json()
-    if result["errno"] != 0:
-        raise DDLException(f"{result['errmsg']}' Check cookies")
-    result = result["list"]
-    if len(result) > 1:
-        raise DDLException("Can't download mutiple files")
-    result = result[0]
 
-    if result["isdir"] != "0":
-        raise DDLException("Can't download folder")
+    from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
+
+    def _parse_surl(share_url):
+        parsed = _urlparse(share_url)
+        if "/s/" in parsed.path:
+            surl = parsed.path.split("/s/")[-1].strip("/")
+        else:
+            qs = _parse_qs(parsed.query)
+            surl = qs.get("surl", [""])[0]
+        if not surl:
+            raise DDLException(f"Cannot extract surl from URL: {share_url}")
+        if len(surl) > 22 and surl.startswith("1"):
+            surl = surl[1:]
+        if len(surl) < 8:
+            raise DDLException(f"Invalid surl: '{surl}'")
+        return surl
+
+    def _build_session(ndus):
+        sess = Session()
+        for domain in TERABOX_DOMAINS:
+            sess.cookies.set("ndus", ndus, domain=domain)
+        return sess
+
+    def _fetch_wap(sess, surl, share_url):
+        host = _urlparse(share_url).hostname or ""
+        candidates = []
+        if host:
+            candidates += [
+                f"http://{host}/wap/share/filelist?surl={surl}",
+                f"https://{host}/wap/share/filelist?surl={surl}",
+            ]
+        for h in TERABOX_HOSTNAMES:
+            u = f"https://{h}/wap/share/filelist?surl={surl}"
+            if u not in candidates:
+                candidates.append(u)
+        candidates.append(f"http://www.terabox.com/wap/share/filelist?surl={surl}")
+
+        headers = {"User-Agent": MOBILE_UA, "Accept": "text/html,*/*"}
+        for wap_url in candidates:
+            try:
+                r = sess.get(wap_url, headers=headers, allow_redirects=True, timeout=15)
+                if r.status_code == 200 and "__INITIAL_STATE__" in r.text:
+                    return r.text
+            except Exception:
+                continue
+        raise DDLException(f"Could not load Terabox WAP page for surl={surl}")
+
+    def _extract_dlinks(html):
+        m = _re.search(
+            r'window\.__INITIAL_STATE__\s*=\s*(\{.+?\})\s*(?:;|</script>)',
+            html, _re.DOTALL,
+        )
+        if not m:
+            raise DDLException("window.__INITIAL_STATE__ not found in WAP page")
+        try:
+            state = _json.loads(m.group(1))
+        except _json.JSONDecodeError:
+            fl_m = _re.search(r'"fileList"\s*:\s*(\[.+?\])\s*,\s*"', html, _re.DOTALL)
+            if not fl_m:
+                raise DDLException("Could not parse file list from WAP page")
+            file_list = _json.loads(fl_m.group(1))
+            state = {"share": {"fileList": file_list}}
+
+        file_list = state.get("share", {}).get("fileList", [])
+        if not file_list:
+            raise DDLException("No files found in Terabox WAP page")
+
+        dlinks = [
+            f["dlink"] for f in file_list
+            if str(f.get("isdir", "0")) != "1" and f.get("dlink")
+        ]
+        if not dlinks:
+            raise DDLException("No direct links found (folder-only share?)")
+        return dlinks
+
     try:
-        return result["dlink"]
-    except:
-        raise DDLException("Link Extraction Failed")
+        surl = _parse_surl(url)
+        sess = _build_session(Config.TERA_COOKIE)
+        html = _fetch_wap(sess, surl, url)
+        return _extract_dlinks(html)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"Terabox WAP bypass error: {e.__class__.__name__}: {e}")
+
+    # ------------------------------------------------------------------
+    # Path 2: Direct WAP bypass (requires TERA_COOKIE / TERABOX_API_URL unset)
+    # ------------------------------------------------------------------
+    if not Config.TERA_COOKIE:
+        raise DDLException(
+            "Terabox: set TERABOX_API_URL (recommended) or TERA_COOKIE to bypass"
+        )
+
+    TERABOX_DOMAINS = [
+        ".terabox.com", ".1024terabox.com", ".teraboxapp.com",
+        ".nephobox.com", ".4funbox.co", ".mirrobox.com",
+        ".momerybox.com", ".terasharefile.com", ".freeterabox.com",
+    ]
+    TERABOX_HOSTNAMES = [
+        "www.terabox.com", "www.1024terabox.com", "www.teraboxapp.com",
+        "www.terasharefile.com", "www.nephobox.com", "www.4funbox.co",
+        "www.mirrobox.com", "www.momerybox.com", "www.freeterabox.com",
+    ]
+    MOBILE_UA = (
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    )
+
+    from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
+
+    def _parse_surl(share_url):
+        parsed = _urlparse(share_url)
+        if "/s/" in parsed.path:
+            surl = parsed.path.split("/s/")[-1].strip("/")
+        else:
+            qs = _parse_qs(parsed.query)
+            surl = qs.get("surl", [""])[0]
+        if not surl:
+            raise DDLException(f"Cannot extract surl from URL: {share_url}")
+        if len(surl) > 22 and surl.startswith("1"):
+            surl = surl[1:]
+        if len(surl) < 8:
+            raise DDLException(f"Invalid surl: '{surl}'")
+        return surl
+
+    def _build_session(ndus):
+        sess = Session()
+        for domain in TERABOX_DOMAINS:
+            sess.cookies.set("ndus", ndus, domain=domain)
+        return sess
+
+    def _fetch_wap(sess, surl, share_url):
+        host = _urlparse(share_url).hostname or ""
+        candidates = []
+        if host:
+            candidates += [
+                f"http://{host}/wap/share/filelist?surl={surl}",
+                f"https://{host}/wap/share/filelist?surl={surl}",
+            ]
+        for h in TERABOX_HOSTNAMES:
+            u = f"https://{h}/wap/share/filelist?surl={surl}"
+            if u not in candidates:
+                candidates.append(u)
+        candidates.append(f"http://www.terabox.com/wap/share/filelist?surl={surl}")
+
+        headers = {"User-Agent": MOBILE_UA, "Accept": "text/html,*/*"}
+        for wap_url in candidates:
+            try:
+                r = sess.get(wap_url, headers=headers, allow_redirects=True, timeout=15)
+                if r.status_code == 200 and "__INITIAL_STATE__" in r.text:
+                    return r.text
+            except Exception:
+                continue
+        raise DDLException(f"Could not load Terabox WAP page for surl={surl}")
+
+    def _extract_dlinks(html):
+        m = _re.search(
+            r'window\.__INITIAL_STATE__\s*=\s*(\{.+?\})\s*(?:;|</script>)',
+            html, _re.DOTALL,
+        )
+        if not m:
+            raise DDLException("window.__INITIAL_STATE__ not found in WAP page")
+        try:
+            state = _json.loads(m.group(1))
+        except _json.JSONDecodeError:
+            fl_m = _re.search(r'"fileList"\s*:\s*(\[.+?\])\s*,\s*"', html, _re.DOTALL)
+            if not fl_m:
+                raise DDLException("Could not parse file list from WAP page")
+            file_list = _json.loads(fl_m.group(1))
+            state = {"share": {"fileList": file_list}}
+
+        file_list = state.get("share", {}).get("fileList", [])
+        if not file_list:
+            raise DDLException("No files found in Terabox WAP page")
+
+        dlinks = [
+            f["dlink"] for f in file_list
+            if str(f.get("isdir", "0")) != "1" and f.get("dlink")
+        ]
+        if not dlinks:
+            raise DDLException("No direct links found (folder-only share?)")
+        return dlinks
+
+    try:
+        surl = _parse_surl(url)
+        sess = _build_session(Config.TERA_COOKIE)
+        html = _fetch_wap(sess, surl, url)
+        return _extract_dlinks(html)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"Terabox WAP bypass error: {e.__class__.__name__}: {e}")
 
 async def try2link(url: str) -> str:
     DOMAIN = 'https://try2link.com'

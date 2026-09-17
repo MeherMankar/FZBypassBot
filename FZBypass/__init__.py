@@ -3,9 +3,11 @@ from time import time
 from wzgram import Client
 from wzgram.enums import ParseMode
 from logging import getLogger, FileHandler, StreamHandler, INFO, ERROR, basicConfig
-from uvloop import install
-
-install()
+try:
+    from uvloop import install
+    install()
+except ImportError:
+    pass  # uvloop is Linux-only; Windows uses the default asyncio event loop
 basicConfig(
     format="[%(asctime)s] [%(levelname)s] - %(message)s",  #  [%(filename)s:%(lineno)d]
     datefmt="%d-%b-%y %I:%M:%S %p",
@@ -49,6 +51,7 @@ class Config:
     HUBDRIVE_CRYPT = conf("HUBDRIVE_CRYPT")
     KATDRIVE_CRYPT = conf("KATDRIVE_CRYPT")
     TERA_COOKIE = conf("TERA_COOKIE")
+    TERABOX_API_URL = conf("TERABOX_API_URL").rstrip("/")
 
 
 Bypass = Client(

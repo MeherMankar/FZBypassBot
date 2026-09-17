@@ -59,9 +59,16 @@ async def direct_link_checker(link, onlylink=False):
             "mirrobox",
             "momerybox",
             "teraboxapp",
+            "terasharefile",
+            "freeterabox",
+            "teraboxlink",
+            "terafileshare",
+            "teraboxshare",
         ]
     ):
-        return await terabox(link)
+        dlinks = await terabox(link)
+        # Single file → return plain string; multi-file → return list for numbered display
+        return dlinks[0] if len(dlinks) == 1 else dlinks
     elif "drive.google.com" in link:
         return get_dl(link, True)
 
