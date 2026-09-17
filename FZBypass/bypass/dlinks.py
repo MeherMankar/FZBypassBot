@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from bs4 import BeautifulSoup
 from cloudscraper import create_scraper
+from curl_cffi.requests import Session as cSession
 from lxml import etree
 from requests import Session
 from aiohttp import ClientSession
@@ -13,6 +14,76 @@ from aiohttp import ClientSession
 from FZBypass import LOGGER, Config
 from FZBypass.core.bot_utils import get_dl
 from FZBypass.core.exceptions import DDLException
+
+
+async def gdflix(url: str) -> str:
+    """
+    GDFlix bypass — uses curl_cffi Chrome impersonation to bypass Cloudflare.
+    Extracts all download buttons directly from the /file/ page.
+    Labels are derived from button text.
+    """
+    from urllib.parse import urlparse as _up
+
+    EXCLUDED_HOSTS = {
+        "new4.gdflix.io", "gdflix.dev", "gdflix.sbs", "goflix.sbs",
+        "t.me", "telegram.me", "telegram.dog",
+        "cdn2.iconfinder.com", "challenges.cloudflare.com",
+    }
+
+    c = cSession()
+    r = c.get(url, impersonate="chrome110", timeout=30)
+    if r.status_code != 200:
+        raise DDLException(f"GDFlix: HTTP {r.status_code}")
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    # Token expired / Cloudflare block check
+    if "Just a moment" in r.text:
+        raise DDLException("GDFlix: Cloudflare challenge not bypassed")
+
+    title_tag = soup.find("title")
+    filename = title_tag.text.replace("GDFlix | ", "").strip() if title_tag else "Unknown"
+
+    # Extract size from og:description  e.g. "Download filename - 1.78GB"
+    desc = soup.find("meta", property="og:description")
+    size = "Unknown"
+    if desc and " - " in (desc.get("content") or ""):
+        size = desc["content"].rsplit(" - ", 1)[-1]
+
+    seen, links = set(), []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href.startswith("http"):
+            continue
+        host = _up(href).hostname or ""
+        if not host or host in EXCLUDED_HOSTS:
+            continue
+        cls = " ".join(a.get("class", []))
+        if "btn" not in cls:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+        label = a.text.strip()
+        # Clean up label
+        label = " ".join(label.split())
+        if not label:
+            label = host.split(".")[0].capitalize() + " Server"
+        links.append((label, href))
+
+    if not links:
+        raise DDLException("GDFlix: no download links found")
+
+    lines = [
+        f"┏<b>Name:</b> <code>{filename}</code>",
+        f"┠<b>Size:</b> <code>{size}</code>",
+        f"┠<b>GDFlix:</b> <a href=\"{url}\">Source</a>",
+    ]
+    for i, (label, link) in enumerate(links):
+        prefix = "┗" if i == len(links) - 1 else "┠"
+        lines.append(f"{prefix}<b>{label}:</b> <a href=\"{link}\">Click Here</a>")
+
+    return "\n".join(lines)
 
 
 async def filepress(url: str):

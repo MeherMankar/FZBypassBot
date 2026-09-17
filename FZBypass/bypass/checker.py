@@ -429,7 +429,9 @@ async def direct_link_checker(link, onlylink=False):
             return await gdtot(link)
         elif "filepress" in domain or "pressbee" in domain:
             return await filepress(link)
-        elif "appdrive" in domain or "gdflix" in domain:
+        elif "gdflix" in domain:
+            return await gdflix(link)
+        elif "appdrive" in domain:
             return await appflix(link)
         else:
             return await sharer_scraper(link)
