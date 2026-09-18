@@ -92,12 +92,13 @@ async def terabox(url: str) -> list:
     # ------------------------------------------------------------------
     if Config.TERABOX_API_URL:
         try:
+            from aiohttp import ClientTimeout as _CT
             async with ClientSession() as session:
                 async with session.post(
                     f"{Config.TERABOX_API_URL}/download",
                     json={"url": url},
                     headers={"Content-Type": "application/json"},
-                    timeout=30,
+                    timeout=_CT(total=60),  # 60s to handle Render cold start
                 ) as resp:
                     data = await resp.json()
 
@@ -111,9 +112,18 @@ async def terabox(url: str) -> list:
                 ]
                 if links:
                     return links
-            # API returned an error or empty result — fall through to cookie path
-        except Exception:
-            pass  # Network/timeout error — fall through to cookie path
+                raise DDLException("Terabox API: no download links in response")
+            # Surface the actual API error message instead of silently falling through
+            raise DDLException(
+                f"Terabox API: {data.get('message', 'unknown error')}"
+            )
+        except DDLException:
+            raise
+        except Exception as e:
+            # Network/timeout — only fall through to cookie path if TERA_COOKIE is set
+            if not Config.TERA_COOKIE:
+                raise DDLException(f"Terabox API unreachable: {e.__class__.__name__}: {e}")
+            # else fall through
 
     # ------------------------------------------------------------------
     # Path 2: Direct WAP bypass using TERA_COOKIE (fallback)
