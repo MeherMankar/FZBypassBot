@@ -20,10 +20,10 @@ async def gdflix(url: str) -> str:
     """
     GDFlix bypass — uses curl_cffi Chrome impersonation to bypass Cloudflare.
     - /file/ pages: extracts all download buttons directly
-    - /pack/ pages: iterates each file and calls gdflix() per file concurrently
+    - /pack/ pages: iterates each file in batches to avoid 429, returns list of results
     """
     from urllib.parse import urlparse as _up
-    from asyncio import create_task, gather as _gather
+    from asyncio import create_task, gather as _gather, sleep as _sleep
 
     c = cSession()
 
@@ -45,23 +45,25 @@ async def gdflix(url: str) -> str:
         if not file_links:
             raise DDLException("GDFlix: no files found in pack")
 
-        # Bypass all files concurrently
-        tasks = [create_task(gdflix(fl)) for fl in file_links]
-        results = await _gather(*tasks, return_exceptions=True)
+        # Process in batches of 3 to avoid 429 rate limiting
+        BATCH = 3
+        results = []
+        for i in range(0, len(file_links), BATCH):
+            batch = file_links[i:i + BATCH]
+            tasks = [create_task(gdflix(fl)) for fl in batch]
+            batch_results = await _gather(*tasks, return_exceptions=True)
+            results.extend(batch_results)
+            if i + BATCH < len(file_links):
+                await _sleep(1.5)  # pause between batches
 
-        body = ""
+        # Return list of per-file results — handler formats them as numbered entries
+        output = [f"┏<b>Pack:</b> <code>{pack_name}</code>\n┠<b>GDFlix:</b> <a href=\"{url}\">Source</a>\n┠<b>Files:</b> {len(file_links)}"]
         for i, (fl, result) in enumerate(zip(file_links, results), start=1):
             if isinstance(result, Exception):
-                body += f"\n\n┎ <b>File {i}:</b> Error — {result}"
+                output.append(f"┎ <b>File {i} Error:</b> {result}")
             else:
-                body += f"\n\n{result}"
-
-        return (
-            f"┏<b>Pack:</b> <code>{pack_name}</code>\n"
-            f"┠<b>GDFlix:</b> <a href=\"{url}\">Source</a>\n"
-            f"┠<b>Files:</b> {len(file_links)}"
-            + body
-        )
+                output.append(result)
+        return output
 
     # --- Single file handler ---
     EXCLUDED_HOSTS = {
