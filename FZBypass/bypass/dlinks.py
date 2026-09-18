@@ -91,52 +91,51 @@ async def filepress(url: str):
     try:
         url = cget("GET", url).url
         raw = urlparse(url)
+        file_id = raw.path.split("/")[-1]
+        base = f"{raw.scheme}://{raw.hostname}"
         async with ClientSession() as sess:
-            json_data = {
-                "id": raw.path.split("/")[-1],
-                "method": "publicDownlaod",
-            }
-            # async with await sess.post(f'{raw.scheme}://{raw.hostname}/api/file/downlaod/', headers={'Referer': f'{raw.scheme}://{raw.hostname}'}, json=json_data) as resp:
-            #    d_id = await resp.json()
-            # if d_id.get('data', False):
-            #    dl_link = f"https://drive.google.com/uc?id={d_id['data']}&export=download"
-            #    parsed = BeautifulSoup(cget('GET', dl_link).content, 'html.parser').find('span')
-            #    combined = str(parsed).rsplit('(', maxsplit=1)
-            #    name, size = combined[0], combined[1].replace(')', '') + 'B'
-            # else:
-            #    dl_link = "Unavailable" if d_id["statusText"] == "Bad Request" else d_id["statusText"]
-            #    name, size = "N/A", "N/A"
-            del json_data["method"]
-            async with await sess.post(
-                f"{raw.scheme}://{raw.hostname}/api/file/telegram/downlaod/",
-                headers={"Referer": f"{raw.scheme}://{raw.hostname}"},
-                json=json_data,
+            async with sess.post(
+                f"{base}/api/file/telegram/downlaod/",
+                headers={"Referer": base},
+                json={"id": file_id},
             ) as resp:
-                tg_id = await resp.json()
-            if tg_id.get("data", False):
-                t_url = f"https://tghub.xyz/?start={tg_id['data']}"
-                bot_name = findall(
-                    "filepress_[a-zA-Z0-9]+_bot", cget("GET", t_url).text
-                )[0]
-                tg_link = f"https://t.me/{bot_name}/?start={tg_id['data']}"
-            else:
-                tg_link = (
-                    "Unavailable"
-                    if tg_id["statusText"] == "Ok"
-                    else tg_id["statusText"]
-                )
+                tg_id = await resp.json(content_type=None)
     except Exception as e:
         raise DDLException(f"{e.__class__.__name__}")
-    if tg_link == "Unavailable":
-        tg_link_text = "Unavailable"
-    else:
-        tg_link_text = f'<a href="{tg_link}">Click Here</a>'
 
-    parse_txt = f"""┏<b>FilePress:</b> <a href="{url}">Click Here</a>
-┗<b>Telegram:</b> {tg_link_text}"""
-    # if "drive.google.com" in dl_link and Config.DIRECT_INDEX:
-    #    parse_txt += f"┠<b>Temp Index:</b> <a href='{get_dl(dl_link)}'>Click Here</a>\n"
-    # parse_txt += f"┗<b>GDrive:</b> <a href='{dl_link}'>Click Here</a>"
+    tg_url = tg_id.get("data", "") if tg_id.get("data") else ""
+    if not tg_url:
+        raise DDLException(
+            tg_id.get("statusText", "FilePress: no download link returned")
+        )
+
+    # Convert tgfiles URL → t.me/filepress_XXXX_bot?start=TOKEN
+    # by scraping the bot name from the filepress JS bundle
+    tg_link = tg_url  # fallback: direct tgfiles URL
+    try:
+        token = tg_url.split("start=")[-1] if "start=" in tg_url else ""
+        if token:
+            import re as _re
+            async with ClientSession() as sess:
+                # Get index page to find JS bundle filename
+                async with sess.get(base, headers={"Referer": base}) as r_idx:
+                    idx_html = await r_idx.text()
+                js_m = _re.search(r'src="(/assets/index-[^"]+\.js)"', idx_html)
+                if js_m:
+                    async with sess.get(
+                        f"{base}{js_m.group(1)}", headers={"Referer": base}
+                    ) as r_js:
+                        js = await r_js.text()
+                    bot_m = _re.search(r'filepress_[a-zA-Z0-9]+_bot', js)
+                    if bot_m:
+                        tg_link = f"https://t.me/{bot_m.group()}/?start={token}"
+    except Exception:
+        pass  # fallback to tgfiles URL
+
+    parse_txt = (
+        f"┏<b>FilePress:</b> <a href=\"{url}\">Source</a>\n"
+        f"┗<b>Telegram:</b> <a href=\"{tg_link}\">Click Here</a>"
+    )
     return parse_txt
 
 
