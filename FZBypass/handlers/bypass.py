@@ -1,5 +1,7 @@
 from time import time
+from time import time
 from asyncio import create_task, gather, sleep as asleep
+from urllib.parse import urlparse as _urlparse
 from wzgram.filters import user
 from wzgram.types import (
     InlineKeyboardButton,
@@ -12,7 +14,7 @@ from wzgram.errors import QueryIdInvalid
 
 from FZBypass import Config, Bypass
 from FZBypass.bypass.checker import direct_link_checker, is_excep_link
-from FZBypass.core.bot_utils import AuthChatsTopics, convert_time, BypassFilter
+from FZBypass.core.bot_utils import AuthChatsTopics, AuthChannels, convert_time, BypassFilter
 
 
 @Bypass.on_message(BypassFilter & (user(Config.OWNER_ID) | AuthChatsTopics))
@@ -91,6 +93,73 @@ async def bypass_check(client, message):
         await wait_msg.edit(tg_txt, disable_web_page_preview=True)
     else:
         await wait_msg.delete()
+
+
+@Bypass.on_channel_post(AuthChannels)
+async def channel_bypass(client, message):
+    """
+    Auto-bypass links in channel posts.
+    The bot must be an admin with 'Edit Messages' permission in the channel.
+    Each bypassed link replaces its original URL inline in the message text.
+    """
+    txt = message.text or message.caption
+    entities = message.entities or message.caption_entities
+    if not txt or not entities:
+        return
+
+    # Domains to silently skip (poster images etc.)
+    _SKIP_DOMAINS = (
+        "mzstatic.com", "media-amazon.com", "images-amazon.com",
+        "is1-ssl.mzstatic.com", "m.media-amazon.com",
+    )
+
+    links, atasks = [], []
+    for enty in entities:
+        if enty.type == MessageEntityType.URL:
+            link = txt[enty.offset: enty.offset + enty.length]
+        elif enty.type == MessageEntityType.TEXT_LINK:
+            link = enty.url
+        else:
+            continue
+        host = _urlparse(link).hostname or ""
+        if any(s in host for s in _SKIP_DOMAINS):
+            continue
+        links.append(link)
+        atasks.append(create_task(direct_link_checker(link)))
+
+    if not atasks:
+        return
+
+    results = await gather(*atasks, return_exceptions=True)
+
+    # Build replacement map: original_link → bypassed_link(s)
+    replacements = {}
+    for link, result in zip(links, results):
+        if result is None or isinstance(result, Exception):
+            continue
+        if isinstance(result, list):
+            replacements[link] = " | ".join(result)
+        else:
+            replacements[link] = result
+
+    if not replacements:
+        return
+
+    # Apply replacements to the message text
+    new_txt = txt
+    for orig, bypassed in replacements.items():
+        new_txt = new_txt.replace(orig, bypassed)
+
+    if new_txt == txt:
+        return  # nothing changed
+
+    try:
+        if message.text:
+            await message.edit_text(new_txt, disable_web_page_preview=True)
+        else:
+            await message.edit_caption(new_txt)
+    except Exception:
+        pass  # silently ignore edit failures (permissions, unchanged text, etc.)
 
 
 @Bypass.on_inline_query()
