@@ -33,6 +33,7 @@
 - _Added Support for Inline Bypass ( Use anytime anywhere)_
   > **Enable:** BotFather -> Bot Settings -> Inline Mode (Turn On)
 - _Terabox DDL generation — works via API or cookie (see [Terabox Setup](#terabox-setup))_
+- _Channel Auto-Bypass — bot edits channel posts in-place, replacing links with bypassed versions (no new message sent)_
 
 ---
 
@@ -253,6 +254,8 @@ Set `TERA_COOKIE` to your Terabox `ndus` cookie value. The bot will use this if 
 - `API_HASH`: This is to authenticate your Telegram account for downloading Telegram files. You can get this from https://my.telegram.org.
 - `AUTH_CHATS`: Group ID (with Topic ID), Separated by space.
   > **Format:** chat_id:topic_id chat_id chat_id:topic_id
+- `AUTH_CHANNELS`: Channel IDs where the bot will auto-bypass links by editing posts in-place. Separated by space. Bot must be admin with **Edit Messages** permission.
+  > **Format:** -100xxxxxxxxxx -100xxxxxxxxxx
 - `AUTO_BYPASS`: Change between Command Mode or Auto Bypass Mode. Default is False.
 - `CMD_SUFFIX`: Suffix added to every bot command, useful when running many bots in one chat. Example: `1` makes `/bypass` become `/bypass1`. Default is empty.
 - `GDTOT_CRYPT`: GdToT Crypt (Optional). It works with & without Crypt!
