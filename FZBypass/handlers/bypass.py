@@ -12,7 +12,7 @@ from wzgram.types import (
 from wzgram.enums import MessageEntityType
 from wzgram.errors import QueryIdInvalid
 
-from FZBypass import Config, Bypass
+from FZBypass import Config, Bypass, LOGGER
 from FZBypass.bypass.checker import direct_link_checker, is_excep_link
 from FZBypass.core.bot_utils import AuthChatsTopics, AuthChannels, convert_time, BypassFilter
 
@@ -95,7 +95,7 @@ async def bypass_check(client, message):
         await wait_msg.delete()
 
 
-@Bypass.on_message(AuthChannels)
+@Bypass.on_message(AuthChannels, group=10)
 async def channel_bypass(client, message):
     """
     Auto-bypass links in channel posts.
@@ -104,6 +104,7 @@ async def channel_bypass(client, message):
     """
     txt = message.text or message.caption
     entities = message.entities or message.caption_entities
+    LOGGER.info(f"Channel bypass triggered: chat={message.chat.id} has_text={bool(txt)} has_entities={bool(entities)}")
     if not txt or not entities:
         return
 
