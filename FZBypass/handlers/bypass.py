@@ -95,7 +95,7 @@ async def bypass_check(client, message):
         await wait_msg.delete()
 
 
-@Bypass.on_channel_post(AuthChannels)
+@Bypass.on_message(AuthChannels)
 async def channel_bypass(client, message):
     """
     Auto-bypass links in channel posts.
