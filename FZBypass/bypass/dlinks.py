@@ -19,32 +19,67 @@ from FZBypass.core.exceptions import DDLException
 async def gdflix(url: str) -> str:
     """
     GDFlix bypass — uses curl_cffi Chrome impersonation to bypass Cloudflare.
-    Extracts all download buttons directly from the /file/ page.
-    Labels are derived from button text.
+    - /file/ pages: extracts all download buttons directly
+    - /pack/ pages: iterates each file and calls gdflix() per file concurrently
     """
     from urllib.parse import urlparse as _up
+    from asyncio import create_task, gather as _gather
 
+    c = cSession()
+
+    # --- Pack handler ---
+    if "/pack/" in url:
+        raw = _up(url)
+        base = f"{raw.scheme}://{raw.hostname}"
+        r = c.get(url, impersonate="chrome110", timeout=30)
+        if "Just a moment" in r.text:
+            raise DDLException("GDFlix: Cloudflare challenge not bypassed")
+        soup = BeautifulSoup(r.text, "html.parser")
+        title_tag = soup.find("title")
+        pack_name = title_tag.text.replace("GDFlix | ", "").strip() if title_tag else "Pack"
+
+        file_links = [
+            base + a["href"]
+            for a in soup.select("a[href^='/file/']")
+        ]
+        if not file_links:
+            raise DDLException("GDFlix: no files found in pack")
+
+        # Bypass all files concurrently
+        tasks = [create_task(gdflix(fl)) for fl in file_links]
+        results = await _gather(*tasks, return_exceptions=True)
+
+        body = ""
+        for i, (fl, result) in enumerate(zip(file_links, results), start=1):
+            if isinstance(result, Exception):
+                body += f"\n\n┎ <b>File {i}:</b> Error — {result}"
+            else:
+                body += f"\n\n{result}"
+
+        return (
+            f"┏<b>Pack:</b> <code>{pack_name}</code>\n"
+            f"┠<b>GDFlix:</b> <a href=\"{url}\">Source</a>\n"
+            f"┠<b>Files:</b> {len(file_links)}"
+            + body
+        )
+
+    # --- Single file handler ---
     EXCLUDED_HOSTS = {
         "new4.gdflix.io", "gdflix.dev", "gdflix.sbs", "goflix.sbs",
         "t.me", "telegram.me", "telegram.dog",
         "cdn2.iconfinder.com", "challenges.cloudflare.com",
     }
 
-    c = cSession()
     r = c.get(url, impersonate="chrome110", timeout=30)
     if r.status_code != 200:
         raise DDLException(f"GDFlix: HTTP {r.status_code}")
-
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    # Token expired / Cloudflare block check
     if "Just a moment" in r.text:
         raise DDLException("GDFlix: Cloudflare challenge not bypassed")
 
+    soup = BeautifulSoup(r.text, "html.parser")
     title_tag = soup.find("title")
     filename = title_tag.text.replace("GDFlix | ", "").strip() if title_tag else "Unknown"
 
-    # Extract size from og:description  e.g. "Download filename - 1.78GB"
     desc = soup.find("meta", property="og:description")
     size = "Unknown"
     if desc and " - " in (desc.get("content") or ""):
@@ -64,11 +99,7 @@ async def gdflix(url: str) -> str:
         if href in seen:
             continue
         seen.add(href)
-        label = a.text.strip()
-        # Clean up label
-        label = " ".join(label.split())
-        if not label:
-            label = host.split(".")[0].capitalize() + " Server"
+        label = " ".join(a.text.strip().split()) or host.split(".")[0].capitalize() + " Server"
         links.append((label, href))
 
     if not links:
