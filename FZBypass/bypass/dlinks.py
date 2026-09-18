@@ -291,12 +291,16 @@ async def drivescript(url, crypt, dtype):
         res = rs.get(dlink)
         soup = BeautifulSoup(res.text, "html.parser")
         gd_data = soup.select('a[class="btn btn-primary btn-user"]')
+        d_link = gd_data[0]["href"] if gd_data else None
         parse_txt = f"""┏<b>Name:</b> <code>{title}</code>
 ┠<b>Size:</b> <code>{size}</code>
 ┠<b>{dtype}:</b> <a href="{url}">Click Here</a>"""
-        if (d_link := gd_data[0]["href"] if gd_data else None) and Config.DIRECT_INDEX:
+        if d_link and Config.DIRECT_INDEX:
             parse_txt += f"\n┠<b>Temp Index:</b> <a href='{get_dl(d_link)}'>Click Here</a>"
-        parse_txt += f"\n┗<b>GDrive:</b> <a href='{d_link}'>Click Here</a>"
+        if d_link:
+            parse_txt += f"\n┗<b>GDrive:</b> <a href='{d_link}'>Click Here</a>"
+        else:
+            parse_txt += f"\n┗<b>Note:</b> GDrive link not found on page"
         return parse_txt
     elif not dlink and not crypt:
         raise DDLException(f"{dtype} Crypt Not Provided and Direct Link Generate Failed")
@@ -497,6 +501,7 @@ async def sharerpw(url: str, force=False):
         return parse_data + f"\n┗<b>Error:</b> {msg}"
     if len(ddl_btn) and not force:
         return await sharerpw(url, force=True)
+    raise DDLException(f"sharerpw: unexpected status {res.get('status')}")
 
 
 async def sharer_scraper(url):

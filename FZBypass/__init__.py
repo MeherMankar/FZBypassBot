@@ -39,7 +39,7 @@ class Config:
     if not BOT_TOKEN or not API_HASH or not API_ID or not OWNER_ID:
         LOGGER.critical("Variables Missing. Exiting Now...")
         exit(1)
-    CMD_SUFFIX = str(conf("CMD_SUFFIX"))
+    CMD_SUFFIX = str(conf("CMD_SUFFIX") or "")
     AUTO_BYPASS = str(conf("AUTO_BYPASS", "False")).lower() == "true"
     _auth = conf("AUTH_CHATS")
     AUTH_CHATS = _auth.split() if isinstance(_auth, str) else [str(c) for c in _auth]

@@ -1,5 +1,4 @@
 from time import time
-from time import time
 from asyncio import create_task, gather, sleep as asleep
 from urllib.parse import urlparse as _urlparse
 from wzgram.filters import user
@@ -16,10 +15,15 @@ from FZBypass import Config, Bypass, LOGGER
 from FZBypass.bypass.checker import direct_link_checker, is_excep_link
 from FZBypass.core.bot_utils import AuthChatsTopics, AuthChannels, convert_time, BypassFilter
 
+# Image/poster CDN domains that appear as decorative TEXT_LINK entities — skip silently
+_SKIP_DOMAINS = (
+    "mzstatic.com", "media-amazon.com", "images-amazon.com",
+    "is1-ssl.mzstatic.com", "m.media-amazon.com",
+)
+
 
 @Bypass.on_message(BypassFilter & (user(Config.OWNER_ID) | AuthChatsTopics))
 async def bypass_check(client, message):
-    uid = message.from_user.id
     if (reply_to := message.reply_to_message) and (
         reply_to.text is not None or reply_to.caption is not None
     ):
@@ -43,15 +47,20 @@ async def bypass_check(client, message):
             link = enty.url
 
         if link:
-            no += 1
-            tlinks.append(link)
-            atasks.append(create_task(direct_link_checker(link)))
+            host = _urlparse(link).hostname or ""
+            if not any(s in host for s in _SKIP_DOMAINS):
+                no += 1
+                tlinks.append(link)
+                atasks.append(create_task(direct_link_checker(link)))
             link = ""
 
     completed_tasks = await gather(*atasks, return_exceptions=True)
 
     parse_data = []
     for result, link in zip(completed_tasks, tlinks):
+        if result is None:
+            no -= 1  # skipped silently by checker
+            continue
         if isinstance(result, Exception):
             bp_link = f"\n┖ <b>Bypass Error:</b> {result}"
         elif is_excep_link(link):
@@ -100,19 +109,19 @@ async def channel_bypass(client, message):
     """
     Auto-bypass links in channel posts.
     The bot must be an admin with 'Edit Messages' permission in the channel.
-    Each bypassed link replaces its original URL inline in the message text.
+
+    Only plain-URL bypass results are substituted inline (shortener → direct URL).
+    Pre-formatted HTML results from DDL scrapers (hubcloud, gdflix, filepress, etc.)
+    are skipped for in-place replacement — they would break the message structure.
     """
     txt = message.text or message.caption
     entities = message.entities or message.caption_entities
-    LOGGER.info(f"Channel bypass triggered: chat={message.chat.id} has_text={bool(txt)} has_entities={bool(entities)}")
+    LOGGER.info(
+        f"Channel bypass triggered: chat={message.chat.id} "
+        f"has_text={bool(txt)} has_entities={bool(entities)}"
+    )
     if not txt or not entities:
         return
-
-    # Domains to silently skip (poster images etc.)
-    _SKIP_DOMAINS = (
-        "mzstatic.com", "media-amazon.com", "images-amazon.com",
-        "is1-ssl.mzstatic.com", "m.media-amazon.com",
-    )
 
     links, atasks = [], []
     for enty in entities:
@@ -133,34 +142,38 @@ async def channel_bypass(client, message):
 
     results = await gather(*atasks, return_exceptions=True)
 
-    # Build replacement map: original_link → bypassed_link(s)
+    # Build replacement map: original_link → bypassed plain URL only.
+    # Skip None, exceptions, and multi-line HTML scraper output (DDL sites).
     replacements = {}
     for link, result in zip(links, results):
         if result is None or isinstance(result, Exception):
             continue
         if isinstance(result, list):
-            replacements[link] = " | ".join(result)
-        else:
+            # Use only the first plain-URL entry; skip HTML-formatted list items
+            plain = [r for r in result if isinstance(r, str) and not r.startswith("┏")]
+            if plain:
+                replacements[link] = plain[0]
+        elif isinstance(result, str) and not result.startswith("┏"):
+            # Only substitute plain URLs — skip pre-formatted HTML scraper output
             replacements[link] = result
 
     if not replacements:
         return
 
-    # Apply replacements to the message text
     new_txt = txt
     for orig, bypassed in replacements.items():
         new_txt = new_txt.replace(orig, bypassed)
 
     if new_txt == txt:
-        return  # nothing changed
+        return
 
     try:
         if message.text:
             await message.edit_text(new_txt, disable_web_page_preview=True)
         else:
             await message.edit_caption(new_txt)
-    except Exception:
-        pass  # silently ignore edit failures (permissions, unchanged text, etc.)
+    except Exception as e:
+        LOGGER.warning(f"channel_bypass: failed to edit message {message.id} in {message.chat.id}: {e}")
 
 
 @Bypass.on_inline_query()

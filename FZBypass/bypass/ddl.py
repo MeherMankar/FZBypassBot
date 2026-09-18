@@ -1,6 +1,4 @@
-from requests import post as rpost ,get as rget
 from re import findall, compile
-from time import sleep, time
 from asyncio import sleep as asleep
 from urllib.parse import quote, urlparse
 
@@ -13,12 +11,6 @@ from aiohttp import ClientSession
 from FZBypass import Config
 from FZBypass.core.exceptions import DDLException
 from FZBypass.bypass.recaptcha import recaptchaV3
-
-async def get_readable_time(seconds):
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h{minutes}m{seconds}s"
-
 
 async def yandex_disk(url: str) -> str:
     cget = create_scraper().request
@@ -233,136 +225,35 @@ async def terabox(url: str) -> list:
     except Exception as e:
         raise DDLException(f"Terabox WAP bypass error: {e.__class__.__name__}: {e}")
 
-    # ------------------------------------------------------------------
-    # Path 2: Direct WAP bypass (requires TERA_COOKIE / TERABOX_API_URL unset)
-    # ------------------------------------------------------------------
-    if not Config.TERA_COOKIE:
-        raise DDLException(
-            "Terabox: set TERABOX_API_URL (recommended) or TERA_COOKIE to bypass"
-        )
-
-    TERABOX_DOMAINS = [
-        ".terabox.com", ".1024terabox.com", ".teraboxapp.com",
-        ".nephobox.com", ".4funbox.co", ".mirrobox.com",
-        ".momerybox.com", ".terasharefile.com", ".freeterabox.com",
-    ]
-    TERABOX_HOSTNAMES = [
-        "www.terabox.com", "www.1024terabox.com", "www.teraboxapp.com",
-        "www.terasharefile.com", "www.nephobox.com", "www.4funbox.co",
-        "www.mirrobox.com", "www.momerybox.com", "www.freeterabox.com",
-    ]
-    MOBILE_UA = (
-        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-    )
-
-    from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
-
-    def _parse_surl(share_url):
-        parsed = _urlparse(share_url)
-        if "/s/" in parsed.path:
-            surl = parsed.path.split("/s/")[-1].strip("/")
-        else:
-            qs = _parse_qs(parsed.query)
-            surl = qs.get("surl", [""])[0]
-        if not surl:
-            raise DDLException(f"Cannot extract surl from URL: {share_url}")
-        if len(surl) > 22 and surl.startswith("1"):
-            surl = surl[1:]
-        if len(surl) < 8:
-            raise DDLException(f"Invalid surl: '{surl}'")
-        return surl
-
-    def _build_session(ndus):
-        sess = Session()
-        for domain in TERABOX_DOMAINS:
-            sess.cookies.set("ndus", ndus, domain=domain)
-        return sess
-
-    def _fetch_wap(sess, surl, share_url):
-        host = _urlparse(share_url).hostname or ""
-        candidates = []
-        if host:
-            candidates += [
-                f"http://{host}/wap/share/filelist?surl={surl}",
-                f"https://{host}/wap/share/filelist?surl={surl}",
-            ]
-        for h in TERABOX_HOSTNAMES:
-            u = f"https://{h}/wap/share/filelist?surl={surl}"
-            if u not in candidates:
-                candidates.append(u)
-        candidates.append(f"http://www.terabox.com/wap/share/filelist?surl={surl}")
-
-        headers = {"User-Agent": MOBILE_UA, "Accept": "text/html,*/*"}
-        for wap_url in candidates:
-            try:
-                r = sess.get(wap_url, headers=headers, allow_redirects=True, timeout=15)
-                if r.status_code == 200 and "__INITIAL_STATE__" in r.text:
-                    return r.text
-            except Exception:
-                continue
-        raise DDLException(f"Could not load Terabox WAP page for surl={surl}")
-
-    def _extract_dlinks(html):
-        m = _re.search(
-            r'window\.__INITIAL_STATE__\s*=\s*(\{.+?\})\s*(?:;|</script>)',
-            html, _re.DOTALL,
-        )
-        if not m:
-            raise DDLException("window.__INITIAL_STATE__ not found in WAP page")
-        try:
-            state = _json.loads(m.group(1))
-        except _json.JSONDecodeError:
-            fl_m = _re.search(r'"fileList"\s*:\s*(\[.+?\])\s*,\s*"', html, _re.DOTALL)
-            if not fl_m:
-                raise DDLException("Could not parse file list from WAP page")
-            file_list = _json.loads(fl_m.group(1))
-            state = {"share": {"fileList": file_list}}
-
-        file_list = state.get("share", {}).get("fileList", [])
-        if not file_list:
-            raise DDLException("No files found in Terabox WAP page")
-
-        dlinks = [
-            f["dlink"] for f in file_list
-            if str(f.get("isdir", "0")) != "1" and f.get("dlink")
-        ]
-        if not dlinks:
-            raise DDLException("No direct links found (folder-only share?)")
-        return dlinks
-
-    try:
-        surl = _parse_surl(url)
-        sess = _build_session(Config.TERA_COOKIE)
-        html = _fetch_wap(sess, surl, url)
-        return _extract_dlinks(html)
-    except DDLException:
-        raise
-    except Exception as e:
-        raise DDLException(f"Terabox WAP bypass error: {e.__class__.__name__}: {e}")
 
 async def try2link(url: str) -> str:
     DOMAIN = 'https://try2link.com'
     code = url.split('/')[-1]
 
     async with ClientSession() as session:
-        referers = ['https://hightrip.net/', 'https://to-travel.netl', 'https://world2our.com/']
+        html = None
+        referers = ['https://hightrip.net/', 'https://to-travel.net', 'https://world2our.com/']
         for referer in referers:
             async with session.get(f'{DOMAIN}/{code}', headers={"Referer": referer}) as res:
                 if res.status == 200:
                     html = await res.text()
                     break
+        if html is None:
+            raise DDLException("try2link: could not load page (all referers failed)")
         soup = BeautifulSoup(html, "html.parser")
-        inputs = soup.find(id="go-link").find_all(name="input")
-        data = { input.get('name'): input.get('value') for input in inputs }
+        go_link = soup.find(id="go-link")
+        if not go_link:
+            raise DDLException("try2link: go-link form not found")
+        inputs = go_link.find_all(name="input")
+        data = {input.get('name'): input.get('value') for input in inputs}
         await asleep(6)
-        async with session.post(f"{DOMAIN}/links/go", data=data, headers={ "X-Requested-With": "XMLHttpRequest" }) as resp:
-            if 'application/json' in resp.headers.get('Content-Type'):
-                json_data = await resp.json()  
-                try:
+        async with session.post(f"{DOMAIN}/links/go", data=data, headers={"X-Requested-With": "XMLHttpRequest"}) as resp:
+            ct = resp.headers.get('Content-Type', '')
+            if 'application/json' in ct:
+                json_data = await resp.json()
+                if 'url' in json_data:
                     return json_data['url']
-                except:        
-                    raise DDLException("Link Extraction Failed")
+            raise DDLException("try2link: no URL in response")
 
 
 async def gyanilinks(url: str) -> str:
@@ -372,7 +263,7 @@ async def gyanilinks(url: str) -> str:
     code = url.split('/')[-1]
     useragent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     DOMAIN = "https://go.bloggingaro.com"
-    
+
     async with ClientSession() as session:
         async with session.get(f"{DOMAIN}/{code}", headers={'Referer':'https://tech.hipsonyc.com/','User-Agent': useragent}) as res:
             cookies = res.cookies
@@ -383,11 +274,12 @@ async def gyanilinks(url: str) -> str:
         data = {inp.get('name'): inp.get('value') for inp in soup.find_all('input')}
         await asleep(5)
         async with session.post(f"{DOMAIN}/links/go", data=data, headers={'X-Requested-With':'XMLHttpRequest','User-Agent': useragent, 'Referer': f"{DOMAIN}/{code}"}, cookies=cookies) as links:
-            if 'application/json' in links.headers.get('Content-Type'):
-                try:
-                    return (await links.json())['url']
-                except Exception:
-                      raise DDLException("Link Extraction Failed")
+            ct = links.headers.get('Content-Type', '')
+            if 'application/json' in ct:
+                result = await links.json()
+                if 'url' in result:
+                    return result['url']
+            raise DDLException("gyanilinks: no URL in response")
 
 
 async def ouo(url: str):
@@ -423,23 +315,10 @@ async def ouo(url: str):
         )
         next_url = f"{p.scheme}://{p.hostname}/xreallcygo/{id}"
 
-    return res.headers.get("Location")
-
-
-async def mdisk(url: str) -> str:
-    """
-    Depreciated ( Code Preserved )
-    """
-    header = {
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://mdisk.me/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36",
-    }
-    URL = f'https://diskuploader.entertainvideo.com/v1/file/cdnurl?param={url.rstrip("/").split("/")[-1]}'
-    res = rget(url=URL, headers=header).json()
-    return res["download"] + "\n\n" + res["source"]
+    location = res.headers.get("Location")
+    if not location:
+        raise DDLException("ouo: no redirect Location header in response")
+    return location
 
 
 async def transcript(url: str, DOMAIN: str, ref: str, sltime) -> str:
@@ -447,22 +326,26 @@ async def transcript(url: str, DOMAIN: str, ref: str, sltime) -> str:
     useragent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
 
     async with ClientSession() as session:
-         async with session.get(f"{DOMAIN}/{code}", headers={'Referer': ref, 'User-Agent': useragent}) as res:
-             html = await res.text()
-             cookies = res.cookies
-         soup = BeautifulSoup(html, "html.parser")
-         title_tag = soup.find('title')
-         if title_tag and title_tag.text == 'Just a moment...':
-             return "Unable To Bypass Due To Cloudflare Protected"
-         else:
-             data = {inp.get('name'): inp.get('value') for inp in soup.find_all('input') if inp.get('name') and inp.get('value')}
-             await asleep(sltime)
-             async with session.post(f"{DOMAIN}/links/go", data=data, headers={'Referer': f"{DOMAIN}/{code}", 'X-Requested-With':'XMLHttpRequest', 'User-Agent': useragent}, cookies=cookies) as resp:
-                  try:
-                      if 'application/json' in resp.headers.get('Content-Type'):
-                          return (await resp.json())['url']
-                  except Exception:
-                      raise DDLException("Link Extraction Failed")
+        async with session.get(f"{DOMAIN}/{code}", headers={'Referer': ref, 'User-Agent': useragent}) as res:
+            html = await res.text()
+            cookies = res.cookies
+        soup = BeautifulSoup(html, "html.parser")
+        title_tag = soup.find('title')
+        if title_tag and title_tag.text == 'Just a moment...':
+            return "Unable To Bypass Due To Cloudflare Protected"
+        data = {inp.get('name'): inp.get('value') for inp in soup.find_all('input') if inp.get('name') and inp.get('value')}
+        await asleep(sltime)
+        async with session.post(
+            f"{DOMAIN}/links/go", data=data,
+            headers={'Referer': f"{DOMAIN}/{code}", 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': useragent},
+            cookies=cookies,
+        ) as resp:
+            ct = resp.headers.get('Content-Type', '')
+            if 'application/json' in ct:
+                result = await resp.json()
+                if 'url' in result:
+                    return result['url']
+            raise DDLException("transcript: no URL in response")
 
 
 async def justpaste(url: str):
