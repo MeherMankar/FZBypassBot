@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from os import path as ospath, execl, remove as _remove
 from glob import glob as _glob
 from asyncio import create_subprocess_exec
+import asyncio
 from sys import executable
 from threading import Thread
 
@@ -77,7 +78,20 @@ async def notify_restart():
 async def main():
     _cleanup_session_files()
     Thread(target=serve_health, daemon=True).start()
-    await Bypass.start()
+    while True:
+        try:
+            await Bypass.start()
+            break
+        except Exception as e:
+            err = str(e)
+            if "FLOOD_WAIT" in err:
+                import re as _re
+                m = _re.search(r"A wait of (\d+) seconds", err)
+                wait = int(m.group(1)) + 5 if m else 60
+                LOGGER.warning(f"Telegram FloodWait — sleeping {wait}s before retry")
+                await asyncio.sleep(wait)
+            else:
+                raise
     LOGGER.info("FZ Bot Started!")
     await notify_restart()
     await idle()
