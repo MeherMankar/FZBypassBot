@@ -24,7 +24,16 @@ import asyncio
 import logging
 from typing import Any, Mapping
 
-import cfscrape
+# cfscrape is incompatible with urllib3 2.x (removed DEFAULT_CIPHERS).
+# Try cfscrape first; fall back to cloudscraper which supports urllib3 2.x.
+try:
+    import cfscrape as _scraper_lib
+    _create_scraper = _scraper_lib.create_scraper
+    _SCRAPER_NAME = "cfscrape"
+except ImportError:
+    import cloudscraper as _scraper_lib  # type: ignore[no-redef]
+    _create_scraper = _scraper_lib.create_scraper
+    _SCRAPER_NAME = "cloudscraper"
 
 from FZBypass.core.networking.exceptions import (
     NetworkCloudflareBlock,
@@ -66,7 +75,7 @@ def _check_cloudflare(resp: HTTPResponse) -> None:
 
 
 def _make_scraper() -> Any:
-    return cfscrape.create_scraper()
+    return _create_scraper()
 
 
 async def _run_cf(func: Any, *args: Any, **kwargs: Any) -> Any:
