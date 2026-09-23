@@ -29,7 +29,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 from FZBypass.bypass.ddl import transcript
 from FZBypass.core.exceptions import DDLException
 from FZBypass.core.networking import cf, http
-from FZBypass.core.networking.client import _SHORT_TIMEOUT
+from FZBypass.core.networking.client import DEFAULT_TIMEOUT as _SHORT_TIMEOUT
 from FZBypass.core.networking.exceptions import NetworkError
 
 # Maximum hops when following redirect chains in toonworld4all

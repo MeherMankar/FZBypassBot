@@ -37,7 +37,7 @@ from FZBypass import LOGGER, Config
 from FZBypass.core.bot_utils import get_dl
 from FZBypass.core.exceptions import DDLException
 from FZBypass.core.networking import cf, http
-from FZBypass.core.networking.client import _MOBILE_UA, _SHORT_TIMEOUT
+from FZBypass.core.networking.client import MOBILE_UA as _MOBILE_UA
 from FZBypass.core.networking.exceptions import NetworkError
 
 # ── Desktop UA for sites that reject mobile UAs ──────────────────────────────
@@ -46,8 +46,9 @@ _DESKTOP_UA = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-# ── Longer timeout for multi-step resolvers ───────────────────────────────────
-_LONG_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=15.0, pool=10.0)
+# ── Timeouts for resolvers ────────────────────────────────────────────────────
+_SHORT_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=15.0, pool=10.0)
+_LONG_TIMEOUT  = httpx.Timeout(connect=10.0, read=30.0, write=15.0, pool=10.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
