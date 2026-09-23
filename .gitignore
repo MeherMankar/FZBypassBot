@@ -163,5 +163,5 @@ log.txt
 *.session
 *.session-journal
 
-
+_saved_vplink.py
 FZ.*
