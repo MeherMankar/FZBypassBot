@@ -57,6 +57,7 @@ async def bypass_check(client, message):
     completed_tasks = await gather(*atasks, return_exceptions=True)
 
     parse_data = []
+    pack_messages = []  # GDFlix pack items sent as separate messages
     for result, link in zip(completed_tasks, tlinks):
         if result is None:
             no -= 1  # skipped silently by checker
@@ -66,6 +67,12 @@ async def bypass_check(client, message):
         elif is_excep_link(link):
             bp_link = result
         elif isinstance(result, list):
+            # GDFlix pack — each item is a pre-formatted multi-line string
+            # Send as individual messages rather than cramming into one
+            if result and isinstance(result[0], str) and result[0].startswith("┏"):
+                pack_messages.extend(result)
+                continue
+            # Simple list of plain URLs
             bp_link, ui = "", "┖"
             for ind, lplink in reversed(list(enumerate(result, start=1))):
                 bp_link = f"\n{ui} <b>{ind}x Bypass Link:</b> {lplink}" + bp_link
@@ -102,6 +109,11 @@ async def bypass_check(client, message):
         await wait_msg.edit(tg_txt, disable_web_page_preview=True)
     else:
         await wait_msg.delete()
+
+    # Send GDFlix pack items as individual messages
+    for item in pack_messages:
+        await message.reply(item, disable_web_page_preview=True)
+        await asleep(0.5)
 
 
 @Bypass.on_message(AuthChannels, group=10)
