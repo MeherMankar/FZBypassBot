@@ -632,47 +632,47 @@ async def thinfi(url: str) -> str:
         raise DDLException("thinfi: link element not found")
 
 
+
+
 async def vplink(url: str) -> str:
     """
-    vplink.in bypass — two-step JS-redirect extraction using httpx.
+    vplink.in bypass via link-bypass-api (Puppeteer/Chromium microservice).
 
-    Step 1: GET the shortener page → extract window.location.href target.
-    Step 2: GET the article page → extract canonical URL (best achievable
-            without a full browser session completing the task chain).
+    Requires BYPASS_API_URL to be configured.
+    Deploy your own instance: https://github.com/MeherMankar/link-bypass-api
 
-    NOTE: The canonical URL returned is the intermediate SEO article page,
-    not the final Telegram/download destination.  The full destination
-    requires server-side task completion which cannot be replicated via
-    plain HTTP.  This is the furthest the resolver can reach without a
-    browser.
+    POST {BYPASS_API_URL}/bypass  {"url": "<vplink_url>"}
+    → {"status": "ok", "result": "<destination_url>"}
     """
-    ua = _MOBILE_UA
+    api_base = Config.BYPASS_API_URL
+    if not api_base:
+        raise DDLException(
+            "vplink: BYPASS_API_URL not configured — "
+            "deploy link-bypass-api and set the URL in config."
+        )
     try:
-        r1 = await http.get(
-            url,
-            headers={"User-Agent": ua},
-            timeout=_SHORT_TIMEOUT,
+        resp = await http.post(
+            f"{api_base}/bypass",
+            json={"url": url},
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0),
         )
     except NetworkError as e:
-        raise DDLException(f"vplink: GET failed — {type(e).__name__}") from e
+        raise DDLException(f"vplink: API unreachable — {type(e).__name__}") from e
 
-    m = _re.search(r"window\.location\.href\s*=\s*[\"']([^\"']+)[\"']", r1.text)
-    if not m:
-        raise DDLException("vplink: could not find redirect URL in page")
-    mid_url = m.group(1)
+    if resp.status_code != 200:
+        raise DDLException(f"vplink: API returned {resp.status_code}")
 
     try:
-        r2 = await http.get(
-            mid_url,
-            headers={"User-Agent": ua, "Referer": url},
-            timeout=_SHORT_TIMEOUT,
-        )
-    except NetworkError as e:
-        raise DDLException(f"vplink: article GET failed — {type(e).__name__}") from e
+        data = resp.json()
+    except Exception as e:
+        raise DDLException("vplink: API returned invalid JSON") from e
 
-    canon = _re.search(
-        r'<link\s+rel=["\']canonical["\']\s+href=["\']([^"\']+)["\']', r2.text
-    )
-    if canon:
-        return canon.group(1)
-    raise DDLException("vplink: could not find canonical URL in article page")
+    if data.get("status") != "ok":
+        msg = data.get("message") or data.get("error") or "unknown error"
+        raise DDLException(f"vplink: {msg}")
+
+    result = data.get("result") or data.get("url") or data.get("data")
+    if not result:
+        raise DDLException("vplink: API response missing destination URL")
+
+    return result

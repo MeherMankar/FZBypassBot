@@ -134,7 +134,7 @@
 |`v2.kpslink.in`|✅️| **29-04-2024**|
 |`v2links.com`|️❌️| **Unknown**|
 |`viplinks.io`|️⚠️| **Unknown**|
-|`vplinks.in`|✅️| **29-04-2024**|
+|`vplinks.in`|✅️| **23-09-2026** (via [link-bypass-api](#vplink-setup))|
 |`www.dropbox.com`|✅️| **Unknown**|
 |`xpshort.com` + `push.bdnewsx.com` + `techymozo.com`|❌| **Unknown**|
 |`ziplinker.net`|✅️| **29-04-2024**|
@@ -245,7 +245,24 @@ Set `TERA_COOKIE` to your Terabox `ndus` cookie value. The bot will use this if 
 
 ---
 
-## ***Config Setup***
+## ***vplink Setup***
+
+vplink.in links require a running instance of [link-bypass-api](https://github.com/MeherMankar/link-bypass-api) — a Puppeteer/Chromium microservice that handles the full bypass chain.
+
+### Deploy link-bypass-api
+
+1. Fork [link-bypass-api](https://github.com/MeherMankar/link-bypass-api)
+2. Deploy as a **Web Service** on [Render](https://render.com) (free tier works)
+3. Set `CHROMIUM_PATH` if needed (Render's Chromium is auto-detected)
+4. Copy the deployed URL (e.g. `https://your-app.onrender.com`) into `BYPASS_API_URL` in this bot's config
+
+The API exposes:
+- `POST /bypass` — body: `{"url": "https://vplink.in/CODE"}` → `{"status": "ok", "result": "<destination>"}`
+- `GET /health` — health check
+
+> **Note:** Without `BYPASS_API_URL` set, vplink.in links will return an error asking you to configure the API.
+
+---
 - _Copy `sample_config.py` to `config.py` in the repo root and fill it up._
   > Values left empty in `config.py` fall back to environment variables, so Heroku / Koyeb / Render style deploys keep working without the file.
 - `BOT_TOKEN`: Telegram Bot Token that you got from BotFather.
@@ -267,6 +284,7 @@ Set `TERA_COOKIE` to your Terabox `ndus` cookie value. The bot will use this if 
   - Get Raw `Refresh Token` from [lavarel-google](https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/2-getting-your-refresh-token.md)
 - `TERA_COOKIE`: Get the Terabox `ndus` Cookie from Cookie Editor Extension. Used as **fallback** when `TERABOX_API_URL` is not set or unavailable.
 - `TERABOX_API_URL`: URL of your deployed [terabox-downloader-api](https://github.com/MeherMankar/terabox-downloader-api) instance (e.g. `https://your-app.onrender.com`). When set, Terabox links are resolved via the API and returned as **proxy links** — anyone can download without needing a Terabox account. Falls back to `TERA_COOKIE` on failure. See [Terabox Setup](#terabox-setup) below.
+- `BYPASS_API_URL`: URL of your deployed [link-bypass-api](https://github.com/MeherMankar/link-bypass-api) instance. Required for vplink.in bypass. See [vplink Setup](#vplink-setup).
 - `LARAVEL_SESSION`: Get from `sharer.pw` Cookie for Login base.
 - `PORT`: Port for the health web server, default `8080`. `Render` & `Koyeb` set `$PORT` themselves, so leave it empty there.
 - `XSRF_TOKEN`: Get from `sharer.pw` Cookie for Login base.

@@ -52,6 +52,7 @@ class Config:
     KATDRIVE_CRYPT = conf("KATDRIVE_CRYPT")
     TERA_COOKIE = conf("TERA_COOKIE")
     TERABOX_API_URL = conf("TERABOX_API_URL").rstrip("/")
+    BYPASS_API_URL = conf("BYPASS_API_URL").rstrip("/")
     _channels = conf("AUTH_CHANNELS")
     AUTH_CHANNELS = _channels.split() if isinstance(_channels, str) and _channels else []
 
