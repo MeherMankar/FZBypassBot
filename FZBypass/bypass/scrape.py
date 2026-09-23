@@ -351,3 +351,72 @@ async def tamilmv(url: str) -> str:
             f"  | <a href=\"{t['href']}\"><b>Torrent 🌐</b></a>"
         )
     return parse_data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HDHub4u
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def hdhub4u(url: str) -> str:
+    """
+    Scrape download links from hdhub4u.* movie pages.
+
+    hdhub4u is a WordPress-based site.  Each movie/series post contains a
+    download section with buttons linking to GDFlix, HubDrive, HubCloud,
+    or direct shorteners.  The buttons are typically inside <article> or
+    <div class="entry-content"> as plain <a> tags.
+    """
+    try:
+        resp = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"HDHub4u: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    post_title = soup.title.string.strip() if soup.title else "Unknown"
+
+    # Known download link domains on hdhub4u posts
+    _DL_DOMAINS = (
+        "gdflix", "hubdrive", "hubcloud", "drivescript",
+        "gdtot", "filepress", "appdrive", "katdrive",
+        "drivefire", "filebee", "pressbee",
+    )
+
+    # Collect all external download links, grouped by quality label
+    # hdhub4u wraps each quality block in a <h3> or <strong> heading
+    # followed by <a> download buttons
+    sections: dict[str, list[str]] = {}
+    current_heading = "Download Links"
+
+    content = soup.select_one("article") or soup.select_one("div.entry-content") or soup
+
+    for el in content.find_all(["h3", "h4", "strong", "a"]):
+        tag = el.name
+        if tag in ("h3", "h4"):
+            current_heading = el.get_text(strip=True) or current_heading
+        elif tag == "strong" and el.get_text(strip=True):
+            text = el.get_text(strip=True)
+            # Only use as heading if it looks like a quality label
+            if any(q in text.upper() for q in ("480P", "720P", "1080P", "4K", "DOWNLOAD", "QUALITY")):
+                current_heading = text
+        elif tag == "a":
+            href = el.get("href", "")
+            if not href.startswith("http"):
+                continue
+            # Skip internal links and ads
+            if "hdhub4u" in href or "bit.ly" in href.lower():
+                continue
+            if any(d in href.lower() for d in _DL_DOMAINS):
+                label = el.get_text(strip=True) or href.split("/")[2]
+                sections.setdefault(current_heading, []).append(
+                    f'<a href="{href}">{label}</a>'
+                )
+
+    if not sections:
+        raise DDLException("HDHub4u: no download links found on page")
+
+    out = f"<b>🎬 {post_title}</b>\n"
+    for heading, links in sections.items():
+        out += f"\n<b>{heading}</b>\n"
+        out += " | ".join(links) + "\n"
+
+    return out
