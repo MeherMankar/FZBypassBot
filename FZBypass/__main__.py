@@ -78,9 +78,25 @@ async def notify_restart():
                 pass
 
 
+async def _keep_alive():
+    """Ping our own health endpoint every 10 minutes to prevent Render spin-down."""
+    import httpx as _httpx
+    port = int(conf("PORT", 8080))
+    url = f"http://localhost:{port}/"
+    await asyncio.sleep(60)  # wait for health server to start
+    while True:
+        try:
+            async with _httpx.AsyncClient() as c:
+                await c.get(url, timeout=5)
+        except Exception:
+            pass
+        await asyncio.sleep(600)  # ping every 10 minutes
+
+
 async def main():
     _cleanup_session_files()
     Thread(target=serve_health, daemon=True).start()
+    asyncio.create_task(_keep_alive())
     while True:
         try:
             await Bypass.start()
