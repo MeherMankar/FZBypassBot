@@ -45,115 +45,115 @@
 
 ### ***Shorten Sites***
 
-- <b>Last Updated</b> : <kbd>Unknown</kbd>
+- <b>Last Updated</b> : <kbd>24-09-2026</kbd>
 
 <details>
     <summary>Shortening Sites<sup><kbd>Click Here to Expand</kbd></sup></summary>
 
-| __Shortener Sites__ | __Status__ |__Last Updated__ |
+| __Shortener Sites__ | __Status__ |__Last Tested__ |
 |:------------------:|:----------:|:----------------:|
-|`adrinolinks.com`|✅️| **01-05-2024**|
-|`adsfly.in`|✅️| **01-05-2024**|
-|`anlinks.in`|️✅️| **22-04-2024**|
-|`appurl.io`|✅️| **01-05-2024**|
-|`bindaaslinks.com`|✅️| **29-04-2024**|
-|`bit.ly` + `tinyurl.com` + `*.short.gy` + `shorturl.ac` + `t.ly`|✅️| **01-05-2024**|
-|`bringlifes.com`|️️⚠️| **01-05-2024**|
-|`dalink.in`|️⚠️| **01-05-2024**|
-|`disk.yandex.ru` + `yandex.com`|✅️| **01-05-2024**|
-|`download.mdiskshortner.link`|✅️| **Unknown**|
-|`droplink.co`|✅️| **Unknown**|
-|`dtglinks.in`|✅️| **Unknown**|
-|`du-link.in` + `dulink.in`|✅️| **Unknown**|
-|`earn.moneykamalo.com`|✅️| **Unknown**|
-|`earn2me.com`|✅️| **Unknown**|
-|`earn2short.in`|✅️| **Unknown**|
-|`earn4link.in`|✅️|**Unknown**|
-|`evolinks.in`|✅| **22-04-2024**|
-|`ez4short.com`|✅️| **Unknown**|
-|`go.lolshort.tech`|❌️| **Unknown**|
+|`adrinolinks.com`|❌️| **Untested**|
+|`adsfly.in`|❌️| **Untested**|
+|`anlinks.in`|❌️| **Untested**|
+|`appurl.io`|❌️| **Untested**|
+|`bindaaslinks.com`|❌️| **Untested**|
+|`bit.ly` + `tinyurl.com` + `*.short.gy` + `shorturl.ac` + `t.ly`|❌️| **Untested**|
+|`bringlifes.com`|❌️| **Untested**|
+|`dalink.in`|❌️| **Untested**|
+|`disk.yandex.ru` + `yandex.com`|❌️| **Untested**|
+|`download.mdiskshortner.link`|❌️| **Untested**|
+|`droplink.co`|❌️| **Untested**|
+|`dtglinks.in`|❌️| **Untested**|
+|`du-link.in` + `dulink.in`|❌️| **Untested**|
+|`earn.moneykamalo.com`|❌️| **Untested**|
+|`earn2me.com`|❌️| **Untested**|
+|`earn2short.in`|❌️| **Untested**|
+|`earn4link.in`|❌️| **Untested**|
+|`evolinks.in`|❌️| **Untested**|
+|`ez4short.com`|❌️| **Untested**|
+|`go.lolshort.tech`|❌️| **Untested**|
 |`greenmotors.club`|✅️| **24-09-2026**|
-|`gtlinks.me` + `gyanilinks.com`|✅| **03-05-2024**|
-|`indianshortner.in`|✅️| **Unknown**|
-|`indyshare.net`|✅️| **Unknown**|
-|`instantearn.in`|✅️| **Unknown**|
-|`justpaste.it`|✅️| **24-06-2024**|
-|`kpslink.in`|✅️| **30-04-2024**|
-|`krownlinks.me`|✅️| **Unknown**|
-|`link.shorito.com`|❌️| **03-05-2024**|
-|`link.tnlink.in`|️✅️| **23-04-2024**|
-|`link.tnshort.net`|✅️| **04-05-2024**|
-|`link.vipurl.in` + `vipurl.in` + `count.vipurl.in`|✅️| **Unknown**|
-|`link1s.com`|✅️| **Unknown**|
-|`link4earn.com` + `link4earn.in`|✅️| **Unknown**|
-|`linkbanao.com`|❌️| **Unknown**|
-|`linkfly.me`|✅️| **Unknown**|
-|`linkjust.com`|✅️| **Unknown**|
-|`linkpays.in`|✅️| **Unknown**|
-|`linkshortx.in`|✅️| **03-05-2024**|
-|`linksly.co`|✅️| **Unknown**|
-|`linkvertise.com`|️❌️| **Unknown**|
-|`linksxyz.in`|️️✅️| **24-06-2024**|
-|`linkyearn.com`|❌️| **Unknown**|
-|`m.easysky.in`|✅| **23-04-2024**|
-|`m.narzolinks.click`|✅️| **Unknown**|
-|`mdisk.pro`|✅️| **01-05-2024**|
-|`mdiskshortner`|✅| **30-04-2024**|
-|`mediafire.com`|✅️| **24-06-2024**|
-|`modijiurl.com`|️❌️| **01-05-2024**|
-|`moneycase.link`|✅️| **Unknown**|
-|`mplaylink.com`|️❌️| **Unknown**|
-|`omnifly.in.net`|✅️| **Unknown**|
-|`onepagelink.in`|✅️| **Unknown**|
-|`ouo.io` + `ouo.press`|✅️| **Unknown**|
-|`pandaznetwork.com`|✅️| **Unknown**|
-|`pdisk.site`|✅️| **03-05-2024**|
-|`pdiskshortener.com`|✅️| **Unknown**|
-|`pkin.me` + `go.paisakamalo.in`|✅️| **Unknown**|
-|`publicearn.com`|❌️| **01-05-2024**|
-|`rocklinks.net`|✅️| **01-05-2024**|
-|`ronylink.com`|✅️| **24-04-2024**|
-|`rslinks.net`|❌️| **Unknown**|
-|`sheralinks.com`|✅️| **Unknown**|
-|`short.tnvalue.in`|✅️| **Unknown**|
-|`short2url.in`|✅️| **Unknown**|
-|`shortingly.com`|️✅️|️ **Unknown**|
-|`shrdsk.me`|️️✅️| **Unknown**|
-|`shrinke.me`|✅️| **30-04-2024**|
-|`shrinkforearn.xyz`|️❌️| **Unknown**|
-|`sklinks.in` + `sklinks.tech`|✅️| **Unknown**|
-|`surl.li`|✅️| **Unknown**|
-|`sxslink.com`|✅️| **Unknown**|
-|`tamizhmasters.com`|⚠️| **Unknown**|
+|`gtlinks.me` + `gyanilinks.com`|❌️| **Untested**|
+|`indianshortner.in`|❌️| **Untested**|
+|`indyshare.net`|❌️| **Untested**|
+|`instantearn.in`|❌️| **Untested**|
+|`justpaste.it`|❌️| **Untested**|
+|`kpslink.in`|❌️| **Untested**|
+|`krownlinks.me`|❌️| **Untested**|
+|`link.shorito.com`|❌️| **Untested**|
+|`link.tnlink.in`|❌️| **Untested**|
+|`link.tnshort.net`|❌️| **Untested**|
+|`link.vipurl.in` + `vipurl.in` + `count.vipurl.in`|❌️| **Untested**|
+|`link1s.com`|❌️| **Untested**|
+|`link4earn.com` + `link4earn.in`|❌️| **Untested**|
+|`linkbanao.com`|❌️| **Untested**|
+|`linkfly.me`|❌️| **Untested**|
+|`linkjust.com`|❌️| **Untested**|
+|`linkpays.in`|❌️| **Untested**|
+|`linkshortx.in`|❌️| **Untested**|
+|`linksly.co`|❌️| **Untested**|
+|`linkvertise.com`|❌️| **Untested**|
+|`linksxyz.in`|❌️| **Untested**|
+|`linkyearn.com`|❌️| **Untested**|
+|`m.easysky.in`|❌️| **Untested**|
+|`m.narzolinks.click`|❌️| **Untested**|
+|`mdisk.pro`|❌️| **Untested**|
+|`mdiskshortner`|❌️| **Untested**|
+|`mediafire.com`|❌️| **Untested**|
+|`modijiurl.com`|❌️| **Untested**|
+|`moneycase.link`|❌️| **Untested**|
+|`mplaylink.com`|❌️| **Untested**|
+|`omnifly.in.net`|❌️| **Untested**|
+|`onepagelink.in`|❌️| **Untested**|
+|`ouo.io` + `ouo.press`|❌️| **Untested**|
+|`pandaznetwork.com`|❌️| **Untested**|
+|`pdisk.site`|❌️| **Untested**|
+|`pdiskshortener.com`|❌️| **Untested**|
+|`pkin.me` + `go.paisakamalo.in`|❌️| **Untested**|
+|`publicearn.com`|❌️| **Untested**|
+|`rocklinks.net`|❌️| **Untested**|
+|`ronylink.com`|❌️| **Untested**|
+|`rslinks.net`|❌️| **Untested**|
+|`sheralinks.com`|❌️| **Untested**|
+|`short.tnvalue.in`|❌️| **Untested**|
+|`short2url.in`|❌️| **Untested**|
+|`shortingly.com`|❌️| **Untested**|
+|`shrdsk.me`|❌️| **Untested**|
+|`shrinke.me`|❌️| **Untested**|
+|`shrinkforearn.xyz`|❌️| **Untested**|
+|`sklinks.in` + `sklinks.tech`|❌️| **Untested**|
+|`surl.li`|❌️| **Untested**|
+|`sxslink.com`|❌️| **Untested**|
+|`tamizhmasters.com`|❌️| **Untested**|
 |`terabox.*` + `1024tera.*` + `nephobox.*` + `4funbox.*` + `mirrobox.*` + `momerybox.*` + `teraboxapp.*` + `terasharefile.*` + `freeterabox.*` + `teraboxlink.*` + `terafileshare.*` + `teraboxshare.*` — [Setup ↗](#terabox-setup)|✅️| **17-09-2026**|
-|`tglink.in`|✅️| **Unknown**|
-|`tinyfy.in`|✅️| **Unknown**|
-|`try2link.com`|✅️| **18-04-2024**|
-|`tulinks.one` + `go.tulinks.online` + `tulinks.online`|✅️| **Unknown**|
-|`url4earn.in`|✅️| **Unknown**|
-|`urllinkshort.in`|✅️| **Unknown**|
-|`urlsopen.com`|✅️| **Unknown**|
-|`urlspay.in`|✅️| **Unknown**|
-|`v2.kpslink.in`|✅️| **29-04-2024**|
-|`v2links.com`|️❌️| **Unknown**|
-|`viplinks.io`|️⚠️| **Unknown**|
+|`tglink.in`|❌️| **Untested**|
+|`tinyfy.in`|❌️| **Untested**|
+|`try2link.com`|❌️| **Untested**|
+|`tulinks.one` + `go.tulinks.online` + `tulinks.online`|❌️| **Untested**|
+|`url4earn.in`|❌️| **Untested**|
+|`urllinkshort.in`|❌️| **Untested**|
+|`urlsopen.com`|❌️| **Untested**|
+|`urlspay.in`|❌️| **Untested**|
+|`v2.kpslink.in`|❌️| **Untested**|
+|`v2links.com`|❌️| **Untested**|
+|`viplinks.io`|❌️| **Untested**|
 |`vplinks.in`|✅️| **23-09-2026** (via [link-bypass-api](#vplink-setup))|
-|`www.dropbox.com`|✅️| **Unknown**|
-|`xpshort.com` + `push.bdnewsx.com` + `techymozo.com`|❌| **Unknown**|
-|`ziplinker.net`|✅️| **29-04-2024**|
+|`www.dropbox.com`|❌️| **Untested**|
+|`xpshort.com` + `push.bdnewsx.com` + `techymozo.com`|❌️| **Untested**|
+|`ziplinker.net`|❌️| **Untested**|
 
 
 ### ***Scrape Sites***
-| __Websites__ | __Status__ |__Last Updated__ |
+| __Websites__ | __Status__ |__Last Tested__ |
 |:------------:|:----------:|:----------------:|
 |`4khdhub.one` **(Movie/Series Page — all quality groups)**|✅️| **24-09-2026**|
-|`cinevood.*` **(Page)** |✅️| **Unknown**|
-|`kayoanime.com` **(Page)**|✅️| **Unknown**|
+|`cinevood.*` **(Page)** |❌️| **Untested**|
+|`kayoanime.com` **(Page)**|❌️| **Untested**|
 |`new*.hdhub4u.*` **(Movie/Series Page)**|✅️| **24-09-2026**|
-|`skymovieshd.*`|✅️| **Unknown**|
-|`toonworld4all.*` **(Page + Episode)** |️❌️| **Unknown**|
-|`ww1.sharespark.cfd`|✅️| **Unknown**|
-|`www.1tamilmv.*` **(Page)**|✅️| **Unknown**|
+|`skymovieshd.*`|❌️| **Untested**|
+|`toonworld4all.*` **(Page + Episode)** |❌️| **Untested**|
+|`ww1.sharespark.cfd`|❌️| **Untested**|
+|`www.1tamilmv.*` **(Page)**|❌️| **Untested**|
 
 </details>
 
@@ -163,17 +163,17 @@
 <details>
     <summary>GDrive Sites<sup><kbd>Click Here to Expand</kbd></sup></summary>
 
-| __Websites__ | __Status__ | __Last Updated__ |
+| __Websites__ | __Status__ | __Last Tested__ |
 |:------------:|:----------:|:----------------:|
-|`appdrive.*` **(File + Pack)**|✅️|**Unknown**|
-|`drivefire.co`|✅️|**Unknown**|
+|`appdrive.*` **(File + Pack)**|❌️| **Untested**|
+|`drivefire.co`|❌️| **Untested**|
 |`*.gdflix.*` + `gdflix.dev` **(R2, PixelDrain, GoFile, Direct Server — all buttons)**|✅️|**17-09-2026**|
 |`hubdrive.*` **(via HubCloud — FSLv2, FSL, ZipDisk, Pixeldrain, Buzz servers)**|✅️|**17-09-2026**|
 |`hubcloud.*` **(Direct — all download servers)**|✅️|**17-09-2026**|
-|`katdrive.org` **(Direct Download)**|✅️|**Unknown**|
-|`new*.gdtot.zip`|️❌️| **Unknown**|
-|`new*.filepress.store` + `filebee.xyz` + `onlystream.xyz` + `pressbee.xyz`**( Only Tg Links )**|✅️|**Unknown**|
-|`sharer.pw`|❌|**Unknown**|
+|`katdrive.org` **(Direct Download)**|❌️| **Untested**|
+|`new*.gdtot.zip`|❌️| **Untested**|
+|`new*.filepress.store` + `filebee.xyz` + `onlystream.xyz` + `pressbee.xyz`**( Only Tg Links )**|❌️| **Untested**|
+|`sharer.pw`|❌️| **Untested**|
 
 </details>
 
@@ -268,8 +268,10 @@ The API exposes:
 > **Note:** Without `BYPASS_API_URL` set, vplink.in links will return an error asking you to configure the API.
 
 ---
-- _Copy `sample_config.py` to `config.py` in the repo root and fill it up._
-  > Values left empty in `config.py` fall back to environment variables, so Heroku / Koyeb / Render style deploys keep working without the file.
+
+## ***Config Setup***
+- _Copy `sample_config.env` to `config.env` in the repo root and fill it up._
+  > Values left empty in `config.env` fall back to environment variables, so Heroku / Koyeb / Render style deploys keep working without the file.
 - `BOT_TOKEN`: Telegram Bot Token that you got from BotFather.
 - `OWNER_ID`: Telegram User ID (not username) of the Owner of the bot.
 - `API_ID`: This is to authenticate your Telegram account for downloading Telegram files. You can get this from https://my.telegram.org.
@@ -293,7 +295,7 @@ The API exposes:
 - `LARAVEL_SESSION`: Get from `sharer.pw` Cookie for Login base.
 - `PORT`: Port for the health web server, default `8080`. `Render` & `Koyeb` set `$PORT` themselves, so leave it empty there.
 - `XSRF_TOKEN`: Get from `sharer.pw` Cookie for Login base.
-- `UPSTREAM_REPO`: Put Upstream Repo to Update. Defaults to `https://github.com/rjriajul/FZBypassBot`
+- `UPSTREAM_REPO`: Put Upstream Repo to Update. Defaults to `https://github.com/MeherMankar/FZBypassBot`
 - `UPSTREAM_BRANCH`: Put Branch Name. Defaults to `main`
 
 ---
@@ -309,5 +311,6 @@ The API exposes:
 
 ## ***Credits***
 - `SilentDemonSD` (Developer)
+- `MeherMankar` (Maintainer & Contributor)
 - `Other Contributors` (Those who commited and Helped Internally)
 - `Link-Bypasser-Bot` (Many Scripts are Taken & Totally Modified)
