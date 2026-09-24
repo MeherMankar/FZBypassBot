@@ -541,20 +541,17 @@ async def dropbox(url: str) -> str:
 
 
 async def linkvertise(url: str) -> str:
-    """Uses httpx — bypass.pm API."""
-    try:
-        resp = await http.get(
-            "https://bypass.pm/bypass2",
-            headers={"User-Agent": _MOBILE_UA},
-            timeout=_SHORT_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = _json.loads(resp.content)
-    except (NetworkError, _json.JSONDecodeError) as e:
-        raise DDLException(f"linkvertise: {type(e).__name__}") from e
-    if data.get("success"):
-        return data["destination"]
-    raise DDLException(data.get("msg", "linkvertise: unknown error"))
+    """
+    Linkvertise bypass — currently not supported.
+
+    Linkvertise's 2026 API uses a GraphQL endpoint with server-side session
+    tracking. Task completion requires a persistent browser session running
+    the ad countdown timer — plain HTTP cannot replicate this.
+    """
+    raise DDLException(
+        "linkvertise: bypass not supported — "
+        "Linkvertise requires a real browser session to complete ad tasks."
+    )
 
 
 async def rslinks(url: str) -> str:
