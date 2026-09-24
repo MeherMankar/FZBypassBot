@@ -466,51 +466,79 @@ async def fourkhdhub(url: str) -> str:
     post_title = soup.title.string.strip() if soup.title else "Unknown"
     post_title = post_title.replace(" - 4K-HDHub", "").replace(" - 4KHDHub", "").strip()
 
-    groups = soup.select("section.download-group")
-    if not groups:
-        raise DDLException("4KHDHub: no download groups found on page")
-
     out = f"<b>🎬 {post_title}</b>\n"
 
-    for group in groups:
-        # Group heading: "2160p / 4K  BluRay  2 options"
-        title_el = group.select_one("div.download-group-title")
-        group_label = title_el.get_text(" ", strip=True) if title_el else "Download"
-        # Clean up — remove "X options" suffix
-        group_label = sub(r"\s*\d+\s*options?", "", group_label).strip()
+    def _extract_item(item) -> str | None:
+        """Extract formatted text from a div.download-item."""
+        # Title — try span.download-title-text first, fall back to flex-1 div text
+        # The download-header div contains both the title and badge spans —
+        # grab only the title span text, not the badge text
+        title_el = item.select_one("span.download-title-text")
+        if title_el:
+            variant = title_el.get_text(strip=True)
+        else:
+            # Fallback: get text from flex-1 div but strip badge text
+            flex_el = item.select_one("div.flex-1")
+            if flex_el:
+                # Remove badge spans before getting text
+                for badge in flex_el.find_all("span", class_="badge"):
+                    badge.decompose()
+                for code in flex_el.find_all("code"):
+                    code.decompose()
+                variant = flex_el.get_text(strip=True)
+            else:
+                variant = ""
 
-        out += f"\n<b>📦 {group_label}</b>\n"
+        fname_el = item.select_one("div.file-title")
+        fname = fname_el.get_text(strip=True) if fname_el else ""
 
-        for item in group.select("div.download-item"):
-            # Variant title
-            title_span = item.select_one("span.download-title-text")
-            variant = title_span.get_text(strip=True) if title_span else ""
+        size_el = item.select_one("span.badge[style*='ea580c']")
+        size = size_el.get_text(strip=True) if size_el else ""
 
-            # Filename
-            fname_el = item.select_one("div.file-title")
-            fname = fname_el.get_text(strip=True) if fname_el else ""
-
-            # Size badge
-            size_el = item.select_one("span.badge[style*='ea580c']")
-            size = size_el.get_text(strip=True) if size_el else ""
-
-            # Download links (HubCloud / HubDrive via greenmotors.club)
-            links = []
-            for a in item.select("a.btn[href]"):
-                href = a["href"]
-                label = a.get_text(strip=True).replace("Download ", "").strip()
-                if href.startswith("http"):
-                    links.append(f'<a href="{href}">{label}</a>')
-
-            if not links:
+        links = []
+        for a in item.select("a.btn[href], a[href*='greenmotors'], a[href*='hubcloud'], a[href*='hubdrive']"):
+            href = a.get("href", "")
+            if not href.startswith("http"):
                 continue
+            label = a.get_text(strip=True).replace("Download ", "").strip() or href.split("/")[2]
+            links.append(f'<a href="{href}">{label}</a>')
 
-            line = f"  ┠ <code>{variant}</code>"
-            if size:
-                line += f" <b>[{size}]</b>"
-            if fname:
-                line += f"\n  ┠ <i>{fname}</i>"
-            line += "\n  ┗ " + " | ".join(links)
-            out += line + "\n"
+        if not links:
+            return None
+
+        line = f"  ┠ <code>{variant}</code>" if variant else "  ┠"
+        if size:
+            line += f" <b>[{size}]</b>"
+        if fname:
+            line += f"\n  ┠ <i>{fname}</i>"
+        line += "\n  ┗ " + " | ".join(links)
+        return line
+
+    # Structure A: section.download-group wrappers (JS-rendered)
+    groups = soup.select("section.download-group")
+    if groups:
+        for group in groups:
+            title_el = group.select_one("div.download-group-title")
+            group_label = sub(r"\s*\d+\s*options?", "",
+                              title_el.get_text(" ", strip=True) if title_el else "").strip()
+            if group_label:
+                out += f"\n<b>📦 {group_label}</b>\n"
+            for item in group.select("div.download-item"):
+                line = _extract_item(item)
+                if line:
+                    out += line + "\n"
+    else:
+        # Structure B: flat div.download-item list (no JS grouping)
+        items = soup.select("div.download-item")
+        if not items:
+            raise DDLException("4KHDHub: no download items found on page")
+        out += "\n<b>📦 Download Links</b>\n"
+        for item in items:
+            line = _extract_item(item)
+            if line:
+                out += line + "\n"
+
+    if out.strip() == f"<b>🎬 {post_title}</b>":
+        raise DDLException("4KHDHub: no download links found on page")
 
     return out
