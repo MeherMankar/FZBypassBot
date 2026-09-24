@@ -420,3 +420,81 @@ async def hdhub4u(url: str) -> str:
         out += " | ".join(links) + "\n"
 
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4KHDHub
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def fourkhdhub(url: str) -> str:
+    """
+    Scrape download links from 4khdhub.one movie/series pages.
+
+    Page structure:
+      div.download-groups
+        section.download-group  (one per quality group, e.g. "2160p / 4K BluRay")
+          div.download-group-title  → group heading
+          div.download-item         (one per file variant)
+            span.download-title-text  → variant title
+            div.file-title            → filename
+            a.btn href=greenmotors.club → HubCloud / HubDrive link
+    """
+    try:
+        resp = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"4KHDHub: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    post_title = soup.title.string.strip() if soup.title else "Unknown"
+    # Strip site name suffix
+    post_title = post_title.replace(" - 4K-HDHub", "").replace(" - 4KHDHub", "").strip()
+
+    groups = soup.select("section.download-group")
+    if not groups:
+        raise DDLException("4KHDHub: no download groups found on page")
+
+    out = f"<b>🎬 {post_title}</b>\n"
+
+    for group in groups:
+        # Group heading: "2160p / 4K  BluRay  2 options"
+        title_el = group.select_one("div.download-group-title")
+        group_label = title_el.get_text(" ", strip=True) if title_el else "Download"
+        # Clean up — remove "X options" suffix
+        import re as _re_local
+        group_label = _re_local.sub(r"\s*\d+\s*options?", "", group_label).strip()
+
+        out += f"\n<b>📦 {group_label}</b>\n"
+
+        for item in group.select("div.download-item"):
+            # Variant title
+            title_span = item.select_one("span.download-title-text")
+            variant = title_span.get_text(strip=True) if title_span else ""
+
+            # Filename
+            fname_el = item.select_one("div.file-title")
+            fname = fname_el.get_text(strip=True) if fname_el else ""
+
+            # Size badge
+            size_el = item.select_one("span.badge[style*='ea580c']")
+            size = size_el.get_text(strip=True) if size_el else ""
+
+            # Download links (HubCloud / HubDrive via greenmotors.club)
+            links = []
+            for a in item.select("a.btn[href]"):
+                href = a["href"]
+                label = a.get_text(strip=True).replace("Download ", "").strip()
+                if href.startswith("http"):
+                    links.append(f'<a href="{href}">{label}</a>')
+
+            if not links:
+                continue
+
+            line = f"  ┠ <code>{variant}</code>"
+            if size:
+                line += f" <b>[{size}]</b>"
+            if fname:
+                line += f"\n  ┠ <i>{fname}</i>"
+            line += "\n  ┗ " + " | ".join(links)
+            out += line + "\n"
+
+    return out

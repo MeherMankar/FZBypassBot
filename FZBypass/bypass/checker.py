@@ -33,7 +33,7 @@ def is_share_link(url):
 def is_excep_link(url):
     return bool(
         match(
-            r"https?:\/\/.+\.(1tamilmv|gdtot|filepress|pressbee|gdflix|sharespark)\.\S+|https?:\/\/(sharer|onlystream|hubdrive|hubcloud|katdrive|drivefire|skymovieshd|toonworld4all|kayoanime|cinevood|gdflix|filepress|pressbee|filebee|appdrive|hdhub4u)\.\S+",
+            r"https?:\/\/.+\.(1tamilmv|gdtot|filepress|pressbee|gdflix|sharespark)\.\S+|https?:\/\/(sharer|onlystream|hubdrive|hubcloud|katdrive|drivefire|skymovieshd|toonworld4all|kayoanime|cinevood|gdflix|filepress|pressbee|filebee|appdrive|hdhub4u|4khdhub)\.\S+",
             url,
         )
     )
@@ -405,6 +405,9 @@ async def direct_link_checker(link, onlylink=False):
 
     elif bool(match(r"https?:\/\/.+\.hdhub4u\.\S+|https?:\/\/hdhub4u\.\S+", link)):
         return await hdhub4u(link)
+
+    elif bool(match(r"https?:\/\/4khdhub\.\S+", link)):
+        return await fourkhdhub(link)
     elif bool(match(r"https?:\/\/kayoanime\.\S+", link)):
         return await kayoanime(link)
     elif bool(match(r"https?:\/\/toonworld4all\.\S+", link)):
