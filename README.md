@@ -34,6 +34,8 @@
   > **Enable:** BotFather -> Bot Settings -> Inline Mode (Turn On)
 - _Terabox DDL generation — works via API or cookie (see [Terabox Setup](#terabox-setup))_
 - _Channel Auto-Bypass — bot edits channel posts in-place, replacing links with bypassed versions (no new message sent)_
+- _greenmotors.club bypass — pure HTTP, no browser required_
+- _4khdhub.one + hdhub4u scraper — extracts all download links and resolves greenmotors URLs to final destinations_
 
 ---
 
@@ -70,6 +72,7 @@
 |`evolinks.in`|✅| **22-04-2024**|
 |`ez4short.com`|✅️| **Unknown**|
 |`go.lolshort.tech`|❌️| **Unknown**|
+|`greenmotors.club`|✅️| **24-09-2026**|
 |`gtlinks.me` + `gyanilinks.com`|✅| **03-05-2024**|
 |`indianshortner.in`|✅️| **Unknown**|
 |`indyshare.net`|✅️| **Unknown**|
@@ -143,8 +146,10 @@
 ### ***Scrape Sites***
 | __Websites__ | __Status__ |__Last Updated__ |
 |:------------:|:----------:|:----------------:|
+|`4khdhub.one` **(Movie/Series Page — all quality groups)**|✅️| **24-09-2026**|
 |`cinevood.*` **(Page)** |✅️| **Unknown**|
 |`kayoanime.com` **(Page)**|✅️| **Unknown**|
+|`new*.hdhub4u.*` **(Movie/Series Page)**|✅️| **24-09-2026**|
 |`skymovieshd.*`|✅️| **Unknown**|
 |`toonworld4all.*` **(Page + Episode)** |️❌️| **Unknown**|
 |`ww1.sharespark.cfd`|✅️| **Unknown**|
