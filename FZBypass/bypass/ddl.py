@@ -676,7 +676,12 @@ async def linkvertise(url: str) -> str:
                                       .get("remainingWaitingTime") or 0)
                         wait_secs = max(wait_secs, st_wait)
                         if wait_secs and wait_secs > 0:
-                            await asleep(min(wait_secs, 60))  # cap at 60s
+                            # Timer is server-enforced — cannot be bypassed
+                            mins = round(wait_secs / 60)
+                            raise DDLException(
+                                f"linkvertise: this link has a wait timer of ~{mins} minute(s). "
+                                f"Try again after the timer expires."
+                            )
 
                     # completeTask
                     d_ct = await _gql(c, "completeTask", _COMPLETE_TASK,
