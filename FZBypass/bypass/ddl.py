@@ -108,6 +108,47 @@ async def shrdsk(url: str) -> str:
     raise DDLException("Shrdsk: No Direct Link Found")
 
 
+async def pornhub(url: str) -> str:
+    """
+    Extract video download link from PornHub via grabx-api.
+    Returns the best proxy download URL from the API.
+    Requires GRABX_API_URL to be configured.
+    """
+    if not Config.GRABX_API_URL:
+        raise DDLException(
+            "PornHub: GRABX_API_URL not configured — "
+            "deploy grabx-api and set the URL in config."
+        )
+    headers = {"Content-Type": "application/json"}
+    if Config.GRABX_API_KEY:
+        headers["X-API-Key"] = Config.GRABX_API_KEY
+    try:
+        resp = await http.post(
+            f"{Config.GRABX_API_URL}/ph/download",
+            json={"url": url},
+            headers=headers,
+            timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0),
+        )
+        resp.raise_for_status()
+        data = _json.loads(resp.content)
+    except NetworkError as e:
+        raise DDLException(f"PornHub: API unreachable — {type(e).__name__}") from e
+
+    if data.get("status") != "success":
+        raise DDLException(f"PornHub: {data.get('message', 'unknown error')}")
+
+    d = data.get("data", {})
+    # Prefer proxy download URL (goes through API with auth headers)
+    link = (
+        d.get("best_proxy_url")
+        or d.get("best_download_url")
+        or d.get("best_url")
+    )
+    if not link:
+        raise DDLException("PornHub: no download link in API response")
+    return link
+
+
 async def terabox(url: str) -> list:
     """
     Resolve a Terabox share URL to a list of direct download links.

@@ -69,6 +69,9 @@ async def direct_link_checker(link, onlylink=False):
         dlinks = await terabox(link)
         # Single file → return plain string; multi-file → return list for numbered display
         return dlinks[0] if len(dlinks) == 1 else dlinks
+
+    elif bool(match(r"https?:\/\/(www\.)?(pornhub\.com|pornhub\.org|pornhub\.net)\S+", link)):
+        return await pornhub(link)
     elif "drive.google.com" in link:
         return get_dl(link, True)
 
