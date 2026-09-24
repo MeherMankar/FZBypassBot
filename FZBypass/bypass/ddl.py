@@ -635,7 +635,7 @@ async def linkvertise(url: str) -> str:
 
             completed: set[str] = set()
 
-            for _attempt in range(10):
+            for _attempt in range(15):
                 # getContent — check if already unlocked
                 d_gc = await _gql(c, "getContent", _GET_CONTENT,
                                   {"identifier": identifier, "task_args": task_args})
@@ -655,6 +655,10 @@ async def linkvertise(url: str) -> str:
                 for task in tasks:
                     task_id = task["id"]
                     if task_id in completed or task.get("status") == "DONE":
+                        completed.add(task_id)
+                        continue
+                    # PremiumTask requires a paid subscription — skip it
+                    if task.get("__typename") == "PremiumTask":
                         completed.add(task_id)
                         continue
 
