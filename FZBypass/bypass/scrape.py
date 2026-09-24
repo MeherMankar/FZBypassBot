@@ -438,15 +438,32 @@ async def fourkhdhub(url: str) -> str:
             span.download-title-text  → variant title
             div.file-title            → filename
             a.btn href=greenmotors.club → HubCloud / HubDrive link
+
+    Uses curl_cffi Chrome impersonation — 4khdhub has Cloudflare protection
+    that cfscrape cannot solve.
     """
+    from asyncio import to_thread as _to_thread
+    from curl_cffi.requests import Session as _CS
+
+    def _fetch():
+        with _CS(impersonate="chrome120") as s:
+            r = s.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+                "Accept-Language": "en-US,en;q=0.5",
+            }, timeout=20)
+            return r.text, r.status_code
+
     try:
-        resp = await cf.get(url)
-    except NetworkError as e:
+        text, status = await _to_thread(_fetch)
+    except Exception as e:
         raise DDLException(f"4KHDHub: {type(e).__name__}") from e
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    if status != 200:
+        raise DDLException(f"4KHDHub: HTTP {status}")
+
+    soup = BeautifulSoup(text, "html.parser")
     post_title = soup.title.string.strip() if soup.title else "Unknown"
-    # Strip site name suffix
     post_title = post_title.replace(" - 4K-HDHub", "").replace(" - 4KHDHub", "").strip()
 
     groups = soup.select("section.download-group")
@@ -460,8 +477,7 @@ async def fourkhdhub(url: str) -> str:
         title_el = group.select_one("div.download-group-title")
         group_label = title_el.get_text(" ", strip=True) if title_el else "Download"
         # Clean up — remove "X options" suffix
-        import re as _re_local
-        group_label = _re_local.sub(r"\s*\d+\s*options?", "", group_label).strip()
+        group_label = sub(r"\s*\d+\s*options?", "", group_label).strip()
 
         out += f"\n<b>📦 {group_label}</b>\n"
 

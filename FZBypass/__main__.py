@@ -41,8 +41,11 @@ class Health(BaseHTTPRequestHandler):
 
 def serve_health():
     port = int(conf("PORT", 8080))
-    LOGGER.info(f"Health server listening on port {port}")
-    ThreadingHTTPServer(("0.0.0.0", port), Health).serve_forever()
+    try:
+        LOGGER.info(f"Health server listening on port {port}")
+        ThreadingHTTPServer(("0.0.0.0", port), Health).serve_forever()
+    except OSError as e:
+        LOGGER.warning(f"Health server could not bind to port {port}: {e}")
 
 
 @Bypass.on_message(command(BotCommands.RestartCommand) & user(Config.OWNER_ID))

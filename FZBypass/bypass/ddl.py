@@ -676,3 +676,72 @@ async def vplink(url: str) -> str:
         raise DDLException("vplink: API response missing destination URL")
 
     return result
+
+
+async def greenmotors(url: str) -> str:
+    """
+    greenmotors.club shortener bypass — pure HTTP, no browser.
+
+    The token is stored in localStorage on the initial page as key 'o'.
+    The /homelander/ page reads it and applies:
+      token → base64_decode → base64_decode → ROT13 → base64_decode → JSON.parse
+    The resulting JSON has an 'o' field which is a base64-encoded final URL.
+
+    We replicate this entirely in Python:
+      1. GET greenmotors.club/?id=... → extract localStorage token from JS
+      2. Decode: b64d(b64d(rot13^-1(b64d(token)))) wait—
+         actual order: b64d → b64d → rot13 → b64d → json → b64d(result['o'])
+      3. Return the final URL
+    """
+    import base64 as _b64
+    import codecs as _codecs
+    import json as _json2
+
+    def _b64d(s: str) -> str:
+        s = s.strip()
+        pad = 4 - len(s) % 4
+        if pad != 4:
+            s += "=" * pad
+        return _b64.b64decode(s).decode("latin-1")
+
+    def _decode_token(token: str) -> str:
+        """Apply the full transformation chain to extract the final URL."""
+        s = _b64d(token)          # step 1: base64 decode
+        s = _b64d(s)              # step 2: base64 decode
+        s = _codecs.encode(s, "rot_13")  # step 3: ROT13
+        s = _b64d(s)              # step 4: base64 decode
+        data = _json.loads(s)     # step 5: JSON parse → {w, l, o}
+        encoded_url = data.get("o", "")
+        if not encoded_url:
+            raise DDLException("greenmotors: no destination URL in decoded token")
+        return _b64d(encoded_url)  # step 6: base64 decode the final URL
+
+    _H = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
+
+    try:
+        async with httpx.AsyncClient(
+            headers=_H, follow_redirects=True,
+            timeout=httpx.Timeout(connect=10.0, read=20.0, write=10.0, pool=5.0),
+        ) as c:
+            r = await c.get(url)
+
+        # Extract token from: s('o', 'TOKEN', ...)
+        token_m = _re.search(r"s\('o','([^']+)'", r.text)
+        if not token_m:
+            raise DDLException("greenmotors: token not found on page")
+
+        return _decode_token(token_m.group(1))
+
+    except DDLException:
+        raise
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        raise DDLException(f"greenmotors: {type(e).__name__}") from e
+    except Exception as e:
+        raise DDLException(f"greenmotors: {type(e).__name__} — {e}") from e

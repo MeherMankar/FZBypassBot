@@ -408,6 +408,9 @@ async def direct_link_checker(link, onlylink=False):
 
     elif bool(match(r"https?:\/\/4khdhub\.\S+", link)):
         return await fourkhdhub(link)
+
+    elif bool(match(r"https?:\/\/greenmotors\.club\S*", link)):
+        return await greenmotors(link)
     elif bool(match(r"https?:\/\/kayoanime\.\S+", link)):
         return await kayoanime(link)
     elif bool(match(r"https?:\/\/toonworld4all\.\S+", link)):
