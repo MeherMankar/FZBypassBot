@@ -663,9 +663,20 @@ async def linkvertise(url: str) -> str:
                         continue
 
                     # startTask
-                    await _gql(c, "startTask", _START_TASK,
+                    d_st = await _gql(c, "startTask", _START_TASK,
                                {"identifier": identifier, "task_id": task_id,
                                 "task_args": task_args})
+
+                    # WaitTask: server enforces a timer — wait for it to expire
+                    if task.get("__typename") == "WaitTask":
+                        wait_secs = task.get("remainingWaitingTime") or 0
+                        # Also check startTask response for updated wait time
+                        st_wait = (d_st.get("data", {})
+                                      .get("startTask", {})
+                                      .get("remainingWaitingTime") or 0)
+                        wait_secs = max(wait_secs, st_wait)
+                        if wait_secs and wait_secs > 0:
+                            await asleep(min(wait_secs, 60))  # cap at 60s
 
                     # completeTask
                     d_ct = await _gql(c, "completeTask", _COMPLETE_TASK,
