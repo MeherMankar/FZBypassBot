@@ -92,7 +92,7 @@
 |`linkpays.in`|❌️| **Untested**|
 |`linkshortx.in`|❌️| **Untested**|
 |`linksly.co`|❌️| **Untested**|
-|`linkvertise.com`|❌️| **Untested**|
+|`linkvertise.com`|✅️| **24-09-2026**|
 |`linksxyz.in`|❌️| **Untested**|
 |`linkyearn.com`|❌️| **Untested**|
 |`m.easysky.in`|❌️| **Untested**|
