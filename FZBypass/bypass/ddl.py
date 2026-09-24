@@ -112,13 +112,48 @@ async def terabox(url: str) -> list:
     """
     Resolve a Terabox share URL to a list of direct download links.
 
-    Path 1 — TERABOX_API_URL (preferred):
-        Uses httpx with 60 s timeout.  Returns proxy_url links.
-    Path 2 — TERA_COOKIE WAP bypass (fallback):
-        Synchronous requests.Session used inside
-        asyncio.to_thread() to avoid blocking the event loop.
+    Path 1 — GRABX_API_URL (preferred, new grabx-api):
+        POST /download with X-API-Key header.
+        Returns proxy_url / dlink per file.
+    Path 2 — TERABOX_API_URL (old terabox-downloader-api, fallback):
+        POST /download with JSON body only.
+    Path 3 — TERA_COOKIE WAP bypass (last resort):
+        Synchronous requests.Session inside asyncio.to_thread().
     """
-    # ── Path 1: terabox-downloader-api ───────────────────────────────────────
+    # ── Path 1: grabx-api (new) ───────────────────────────────────────────────
+    if Config.GRABX_API_URL:
+        api_timeout = httpx.Timeout(connect=10.0, read=60.0, write=15.0, pool=10.0)
+        headers = {"Content-Type": "application/json"}
+        if Config.GRABX_API_KEY:
+            headers["X-API-Key"] = Config.GRABX_API_KEY
+        try:
+            resp = await http.post(
+                f"{Config.GRABX_API_URL}/download",
+                json={"url": url},
+                headers=headers,
+                timeout=api_timeout,
+            )
+            resp.raise_for_status()
+            data = _json.loads(resp.content)
+        except NetworkError as e:
+            if not Config.TERABOX_API_URL and not Config.TERA_COOKIE:
+                raise DDLException(f"GrabX API unreachable: {type(e).__name__}") from e
+        else:
+            if data.get("status") == "success":
+                files = data["data"].get("files", [])
+                links = [
+                    f.get("proxy_url") or f.get("dlink")
+                    for f in files
+                    if f.get("proxy_url") or f.get("dlink")
+                ]
+                if links:
+                    return links
+                raise DDLException("GrabX API: no download links in response")
+            raise DDLException(
+                f"GrabX API: {data.get('message', 'unknown error')}"
+            )
+
+    # ── Path 2: old terabox-downloader-api ────────────────────────────────────
     if Config.TERABOX_API_URL:
         api_timeout = httpx.Timeout(connect=10.0, read=60.0, write=15.0, pool=10.0)
         try:
@@ -127,16 +162,14 @@ async def terabox(url: str) -> list:
                 json={"url": url},
                 headers={"Content-Type": "application/json"},
                 timeout=api_timeout,
-                retry=True,
             )
             resp.raise_for_status()
             data = _json.loads(resp.content)
         except NetworkError as e:
             if not Config.TERA_COOKIE:
                 raise DDLException(
-                    f"Terabox API unreachable: {type(e).__name__}: {e}"
+                    f"Terabox API unreachable: {type(e).__name__}"
                 ) from e
-            # else fall through to WAP path
         else:
             if data.get("status") == "success":
                 files = data["data"].get("files", [])
@@ -152,10 +185,10 @@ async def terabox(url: str) -> list:
                 f"Terabox API: {data.get('message', 'unknown error')}"
             )
 
-    # ── Path 2: WAP bypass using TERA_COOKIE ─────────────────────────────────
+    # ── Path 3: WAP bypass using TERA_COOKIE ─────────────────────────────────
     if not Config.TERA_COOKIE:
         raise DDLException(
-            "Terabox: set TERABOX_API_URL (recommended) or TERA_COOKIE to bypass"
+            "Terabox: set GRABX_API_URL (recommended), TERABOX_API_URL, or TERA_COOKIE"
         )
 
     import asyncio
