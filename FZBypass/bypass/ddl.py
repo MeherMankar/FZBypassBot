@@ -601,10 +601,12 @@ async def linkvertise(url: str) -> str:
 
     # Generate action_id — must be consistent across all calls in this session
     action_id = str(_uuid.uuid4()) + str(_uuid.uuid4()).replace("-", "")[:20]
+    request_id = str(_uuid.uuid4())  # helps complete WaitTask faster
 
     identifier = {"userIdAndUrl": {"url": slug, "user_id": user_id}}
     task_args = {
         "action_id": action_id,
+        "request_id": request_id,
         "additional_data": {
             "taboola": {
                 "user_id": "fallbackUserId",
@@ -670,7 +672,6 @@ async def linkvertise(url: str) -> str:
                     # WaitTask: server enforces a timer — wait for it to expire
                     if task.get("__typename") == "WaitTask":
                         wait_secs = task.get("remainingWaitingTime") or 0
-                        # Also check startTask response for updated wait time
                         st_wait = (d_st.get("data", {})
                                       .get("startTask", {})
                                       .get("remainingWaitingTime") or 0)
