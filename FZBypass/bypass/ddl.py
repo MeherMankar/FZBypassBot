@@ -129,7 +129,6 @@ async def pornhub(url: str) -> str:
             headers=headers,
             timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0),
         )
-        resp.raise_for_status()
         data = _json.loads(resp.content)
     except NetworkError as e:
         raise DDLException(f"PornHub: API unreachable — {type(e).__name__}") from e
