@@ -468,19 +468,14 @@ async def fourkhdhub(url: str) -> str:
 
     out = f"<b>🎬 {post_title}</b>\n"
 
-    def _extract_item(item) -> str | None:
-        """Extract formatted text from a div.download-item."""
-        # Title — try span.download-title-text first, fall back to flex-1 div text
-        # The download-header div contains both the title and badge spans —
-        # grab only the title span text, not the badge text
+    def _extract_item(item) -> tuple[str, str, str, list[str]] | None:
+        """Extract (variant, fname, size, [hrefs]) from a div.download-item."""
         title_el = item.select_one("span.download-title-text")
         if title_el:
             variant = title_el.get_text(strip=True)
         else:
-            # Fallback: get text from flex-1 div but strip badge text
             flex_el = item.select_one("div.flex-1")
             if flex_el:
-                # Remove badge spans before getting text
                 for badge in flex_el.find_all("span", class_="badge"):
                     badge.decompose()
                 for code in flex_el.find_all("code"):
@@ -495,16 +490,92 @@ async def fourkhdhub(url: str) -> str:
         size_el = item.select_one("span.badge[style*='ea580c']")
         size = size_el.get_text(strip=True) if size_el else ""
 
-        links = []
+        hrefs = []
         for a in item.select("a.btn[href], a[href*='greenmotors'], a[href*='hubcloud'], a[href*='hubdrive']"):
             href = a.get("href", "")
-            if not href.startswith("http"):
-                continue
-            label = a.get_text(strip=True).replace("Download ", "").strip() or href.split("/")[2]
-            links.append(f'<a href="{href}">{label}</a>')
+            if href.startswith("http"):
+                hrefs.append(href)
 
-        if not links:
+        if not hrefs:
             return None
+        return variant, fname, size, hrefs
+
+    # ── Collect all items ─────────────────────────────────────────────────────
+    raw_items: list[tuple[str, str, str, list[str]]] = []
+
+    groups = soup.select("section.download-group")
+    if groups:
+        for group in groups:
+            title_el = group.select_one("div.download-group-title")
+            group_label = sub(r"\s*\d+\s*options?", "",
+                              title_el.get_text(" ", strip=True) if title_el else "").strip()
+            for item in group.select("div.download-item"):
+                parsed = _extract_item(item)
+                if parsed:
+                    raw_items.append((group_label,) + parsed)  # type: ignore[arg-type]
+    else:
+        items = soup.select("div.download-item")
+        if not items:
+            raise DDLException("4KHDHub: no download items found on page")
+        for item in items:
+            parsed = _extract_item(item)
+            if parsed:
+                raw_items.append(("",) + parsed)  # type: ignore[arg-type]
+
+    if not raw_items:
+        raise DDLException("4KHDHub: no download links found on page")
+
+    # ── Resolve all greenmotors URLs concurrently ────────────────────────────
+    from FZBypass.bypass.ddl import greenmotors as _greenmotors
+
+    async def _resolve(href: str) -> str:
+        if "greenmotors.club" in href:
+            try:
+                return await _greenmotors(href)
+            except Exception:
+                return href  # fall back to raw URL on failure
+        return href
+
+    # Collect all unique hrefs to resolve
+    all_hrefs: list[str] = []
+    for row in raw_items:
+        all_hrefs.extend(row[4])  # hrefs is index 4: (group, variant, fname, size, hrefs)
+
+    resolved = await gather(*[_resolve(h) for h in all_hrefs])
+
+    # Map original href → resolved URL
+    href_map: dict[str, str] = {}
+    i = 0
+    for row in raw_items:
+        for href in row[4]:
+            href_map[href] = resolved[i]
+            i += 1
+
+    # ── Build output ──────────────────────────────────────────────────────────
+    out = f"<b>🎬 {post_title}</b>\n"
+    last_group = None
+
+    for group_label, variant, fname, size, hrefs in raw_items:
+        if group_label and group_label != last_group:
+            out += f"\n<b>📦 {group_label}</b>\n"
+            last_group = group_label
+        elif not group_label and last_group is None:
+            out += "\n<b>📦 Download Links</b>\n"
+            last_group = ""
+
+        links = []
+        for href in hrefs:
+            final = href_map.get(href, href)
+            # Label from the link text or domain
+            if "hubcloud" in final.lower():
+                label = "HubCloud"
+            elif "hubdrive" in final.lower():
+                label = "HubDrive"
+            elif "gdflix" in final.lower():
+                label = "GDFlix"
+            else:
+                label = final.split("/")[2] if "//" in final else "Link"
+            links.append(f'<a href="{final}">{label}</a>')
 
         line = f"  ┠ <code>{variant}</code>" if variant else "  ┠"
         if size:
@@ -512,33 +583,6 @@ async def fourkhdhub(url: str) -> str:
         if fname:
             line += f"\n  ┠ <i>{fname}</i>"
         line += "\n  ┗ " + " | ".join(links)
-        return line
-
-    # Structure A: section.download-group wrappers (JS-rendered)
-    groups = soup.select("section.download-group")
-    if groups:
-        for group in groups:
-            title_el = group.select_one("div.download-group-title")
-            group_label = sub(r"\s*\d+\s*options?", "",
-                              title_el.get_text(" ", strip=True) if title_el else "").strip()
-            if group_label:
-                out += f"\n<b>📦 {group_label}</b>\n"
-            for item in group.select("div.download-item"):
-                line = _extract_item(item)
-                if line:
-                    out += line + "\n"
-    else:
-        # Structure B: flat div.download-item list (no JS grouping)
-        items = soup.select("div.download-item")
-        if not items:
-            raise DDLException("4KHDHub: no download items found on page")
-        out += "\n<b>📦 Download Links</b>\n"
-        for item in items:
-            line = _extract_item(item)
-            if line:
-                out += line + "\n"
-
-    if out.strip() == f"<b>🎬 {post_title}</b>":
-        raise DDLException("4KHDHub: no download links found on page")
+        out += line + "\n"
 
     return out
