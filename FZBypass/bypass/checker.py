@@ -385,7 +385,7 @@ async def direct_link_checker(link, onlylink=False):
         blink = await shareus(link)
     elif bool(match(r"https?:\/\/(.+\.)?dropbox\.\S+", link)):
         blink = await dropbox(link)
-    elif bool(match(r"https?:\/\/(linkvertise|link-to|lootlinks|lootlabs|linkvertised|lv-linkvertise|work\.ink|direct-link|sub2unlock|sub2get|sub4unlock|mboost|booo\.st|bst\.gg)\.\S+", link)):
+    elif bool(match(r"https?:\/\/(linkvertise|link-to|lootlinks|lootlabs|linkvertised|lv-linkvertise|direct-link)\.\S+", link)):
         blink = await linkvertise(link)
     elif bool(match(r"https?:\/\/rslinks\.\S+", link)):
         blink = await rslinks(link)
