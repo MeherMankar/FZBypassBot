@@ -385,10 +385,6 @@ async def direct_link_checker(link, onlylink=False):
         blink = await transcript(
             link, "https://ziplinker.net", "https://fintech.techweeky.com/", 1
         )
-    elif bool(match(r"https?:\/\/(gplinks\.co|gplinks\.in)\S+", link)):
-        blink = await gplinks(link)
-    elif bool(match(r"https?:\/\/(adf\.ly|j\.gs|q\.gs|ay\.gy|ad\.fly)\S+", link)):
-        blink = await adfly(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
         blink = await ouo(link)
     elif bool(match(r"https?:\/\/(shareus|shrs)\.\S+", link)):
