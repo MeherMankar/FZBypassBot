@@ -72,6 +72,12 @@ async def direct_link_checker(link, onlylink=False):
 
     elif bool(match(r"https?:\/\/(www\.)?(pornhub\.com|pornhub\.org|pornhub\.net)\S+", link)):
         return await pornhub(link)
+    elif bool(match(r"https?:\/\/(www\.)?pixeldrain\.com\/(u|l)\/\S+", link)):
+        return await pixeldrain(link)
+    elif bool(match(r"https?:\/\/(www\.)?gofile\.io\/(d|download)\/\S+", link)):
+        return await gofile(link)
+    elif bool(match(r"https?:\/\/(1drv\.ms|onedrive\.live\.com|sharepoint\.com)\S+", link)):
+        return await onedrive(link)
     elif "drive.google.com" in link:
         return get_dl(link, True)
 
@@ -379,6 +385,10 @@ async def direct_link_checker(link, onlylink=False):
         blink = await transcript(
             link, "https://ziplinker.net", "https://fintech.techweeky.com/", 1
         )
+    elif bool(match(r"https?:\/\/(gplinks\.co|gplinks\.in)\S+", link)):
+        blink = await gplinks(link)
+    elif bool(match(r"https?:\/\/(adf\.ly|j\.gs|q\.gs|ay\.gy|ad\.fly)\S+", link)):
+        blink = await adfly(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
         blink = await ouo(link)
     elif bool(match(r"https?:\/\/(shareus|shrs)\.\S+", link)):
@@ -401,6 +411,18 @@ async def direct_link_checker(link, onlylink=False):
         blink = await justpaste(link)
     elif bool(match(r"https?:\/\/linksxyz\.\S+", link)):
         blink = await linksxyz(link)
+
+    # ── File hosters that return direct links ─────────────────────────────────
+    elif bool(match(r"https?:\/\/(www\.)?streamtape\.\S+", link)):
+        return await streamtape(link)
+    elif bool(match(r"https?:\/\/(wetransfer\.com|we\.tl)\S+", link)):
+        return await wetransfer(link)
+    elif bool(match(r"https?:\/\/(www\.)?filecrypt\.co\S+", link)):
+        return await filecrypt(link)
+    elif bool(match(r"https?:\/\/(www\.)?krakenfiles\.com\S+", link)):
+        return await krakenfiles(link)
+    elif bool(match(r"https?:\/\/.*1fichier\.com\S*", link)):
+        return await fichier(link)
 
     # DL Sites
     elif bool(match(r"https?:\/\/cinevood\.\S+", link)):

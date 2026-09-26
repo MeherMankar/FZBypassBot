@@ -969,3 +969,570 @@ async def greenmotors(url: str) -> str:
         raise DDLException(f"greenmotors: {type(e).__name__}") from e
     except Exception as e:
         raise DDLException(f"greenmotors: {type(e).__name__} — {e}") from e
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FILE HOSTER RESOLVERS — batch 2
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def pixeldrain(url: str) -> str:
+    """
+    Pixeldrain direct link generator.
+
+    Supports single files (/u/<id>) and lists (/l/<id>).
+    Single file  → https://pixeldrain.com/api/file/<id>?download
+    List         → https://pixeldrain.com/api/list/<id>/zip?download
+    Verifies the file exists via the info endpoint before returning.
+    """
+    url = url.strip("/ ")
+    parts = url.rstrip("/").split("/")
+    file_id = parts[-1]
+
+    if len(parts) >= 2 and parts[-2] == "l":
+        info_link = f"https://pixeldrain.com/api/list/{file_id}"
+        dl_link = f"https://pixeldrain.com/api/list/{file_id}/zip?download"
+    else:
+        info_link = f"https://pixeldrain.com/api/file/{file_id}/info"
+        dl_link = f"https://pixeldrain.com/api/file/{file_id}?download"
+
+    try:
+        resp = await http.get(info_link, timeout=_SHORT_TIMEOUT)
+        resp.raise_for_status()
+        data = _json.loads(resp.content)
+    except NetworkError as e:
+        raise DDLException(f"Pixeldrain: {type(e).__name__}") from e
+
+    if not data.get("success", True):
+        raise DDLException(f"Pixeldrain: {data.get('message', 'File not accessible')}")
+
+    return dl_link
+
+
+async def gofile(url: str) -> str:
+    """
+    Gofile direct link generator.
+
+    GoFile rotated their websiteToken (wt) away from a static constant.
+    It is now a SHA-256 computed client-side:
+
+        wt = sha256(f"{user_agent}::{language}::{account_token}::{window}::{salt}")
+        window = floor(unix_time / 14400)   # 4-hour rotating bucket
+
+    The salt ("12af056dacea0b") is embedded in wt.obf.js. It may change;
+    override with the env var GOFILE_WT_SALT when that happens.
+
+    The /contents request requires:
+        Authorization: Bearer <token>
+        X-Website-Token: <computed wt>
+        X-BL: en-US
+    """
+    import hashlib as _hashlib
+    import time as _time
+
+    _API = "https://api.gofile.io"
+    _GF_UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    )
+    _GF_LANG = "en-US"
+    _GF_SALT = "12af056dacea0b"  # from wt.obf.js; set GOFILE_WT_SALT env var to override
+
+    import os as _os
+    _GF_SALT = _os.environ.get("GOFILE_WT_SALT", _GF_SALT)
+
+    content_id = url.rstrip("/").split("/")[-1]
+
+    def _make_wt(account_token: str, window_offset: int = 0) -> str:
+        window = int(_time.time() // 14400) + window_offset
+        raw = f"{_GF_UA}::{_GF_LANG}::{account_token}::{window}::{_GF_SALT}"
+        return _hashlib.sha256(raw.encode()).hexdigest()
+
+    # Step 1: create guest account
+    try:
+        acc_resp = await http.post(
+            f"{_API}/accounts",
+            headers={"User-Agent": _GF_UA, "Origin": "https://gofile.io"},
+            timeout=_SHORT_TIMEOUT,
+        )
+        acc_resp.raise_for_status()
+        acc_data = _json.loads(acc_resp.content)
+    except NetworkError as e:
+        raise DDLException(f"Gofile: {type(e).__name__} creating account") from e
+
+    if acc_data.get("status") != "ok":
+        raise DDLException(f"Gofile: account creation failed — {acc_data.get('status', '')}")
+
+    token = acc_data["data"]["token"]
+
+    # Step 2: fetch content — retry once with previous time window on notPremium
+    for window_offset in (0, -1):
+        wt = _make_wt(token, window_offset)
+        _content_headers = {
+            "Authorization": f"Bearer {token}",
+            "X-Website-Token": wt,
+            "X-BL": _GF_LANG,
+            "User-Agent": _GF_UA,
+            "Origin": "https://gofile.io",
+            "Referer": "https://gofile.io/",
+        }
+        try:
+            content_resp = await http.get(
+                f"{_API}/contents/{content_id}?contentFilter=&page=1&pageSize=1000"
+                f"&sortField=createTime&sortDirection=-1",
+                headers=_content_headers,
+                timeout=_SHORT_TIMEOUT,
+            )
+            content_resp.raise_for_status()
+            content_data = _json.loads(content_resp.content)
+        except NetworkError as e:
+            raise DDLException(f"Gofile: {type(e).__name__} fetching content") from e
+
+        status = content_data.get("status", "")
+        if status == "error-notPremium" and window_offset == 0:
+            continue  # retry with previous 4-hour window
+        if status != "ok":
+            raise DDLException(f"Gofile: {status}")
+        break
+
+    children = content_data.get("data", {}).get("children", {})
+    if not children:
+        # Some responses use "contents" key instead
+        children = content_data.get("data", {}).get("contents", {})
+    if not children:
+        raise DDLException("Gofile: no files found in content")
+
+    for item in children.values():
+        if item.get("type") == "file":
+            link = item.get("link") or item.get("directLink")
+            if link:
+                return link
+
+    raise DDLException("Gofile: no direct link found in content")
+
+
+async def gplinks(url: str) -> str:
+    """
+    GPLinks shortener bypass.
+
+    NOTE: As of 2025, GPLinks replaced their countdown bypass with a
+    Razorpay premium subscription gate. The old POST /links/go flow
+    no longer works for new links.
+
+    This function is kept for legacy links that may still use the old system.
+    """
+    _DOMAIN = "https://gplinks.co"
+
+    try:
+        # Step 1: get the vid token via redirect
+        r1 = await http.get(
+            url,
+            follow_redirects=False,
+            timeout=_SHORT_TIMEOUT,
+        )
+        location = r1.headers.get("location", "")
+        vid = location.split("=")[-1] if "=" in location else ""
+
+        # Step 2: load the actual shortener page
+        page_url = f"{url}/?{vid}" if vid else url
+        r2 = await http.get(
+            page_url,
+            headers={"Referer": "https://mynewsmedia.co/", "User-Agent": _MOBILE_UA},
+            timeout=_SHORT_TIMEOUT,
+        )
+        r2.raise_for_status()
+    except NetworkError as e:
+        raise DDLException(f"gplinks: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(r2.text, "html.parser")
+    go_link = soup.find(id="go-link")
+    if not go_link:
+        # Check if it's the new premium gate (Razorpay)
+        gate = soup.find(id="gateModal")
+        if gate:
+            raise DDLException(
+                "gplinks: this link requires a GPLinks Premium subscription — bypass not possible"
+            )
+        raise DDLException("gplinks: go-link form not found (site may have changed)")
+
+    inputs = go_link.find_all(name="input")
+    data = {inp.get("name"): inp.get("value") for inp in inputs}
+
+    await asleep(10)
+
+    try:
+        resp = await http.post(
+            f"{_DOMAIN}/links/go",
+            data=data,
+            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": _MOBILE_UA},
+            timeout=_SHORT_TIMEOUT,
+        )
+        resp.raise_for_status()
+    except NetworkError as e:
+        raise DDLException(f"gplinks: POST failed — {e}") from e
+
+    ct = resp.headers.get("content-type", "")
+    if "application/json" in ct:
+        result = _json.loads(resp.content)
+        if "url" in result:
+            return result["url"]
+
+    raise DDLException("gplinks: no URL in POST response")
+
+
+async def fichier(url: str) -> str:
+    """
+    1fichier.com direct link generator.
+
+    Supports password-protected links via the :: separator:
+      https://1fichier.com/?<id>::<password>
+
+    Uses cfscrape — 1fichier checks TLS fingerprint / browser headers.
+    """
+    # Strip password if present
+    pswd: str | None = None
+    if "::" in url:
+        url, pswd = url.rsplit("::", 1)
+
+    # Validate URL shape
+    if not _re.match(r"^https?://.*1fichier\.com/\?.+", url):
+        raise DDLException("1fichier: invalid URL format")
+
+    post_data = {"pass": pswd} if pswd else {}
+
+    try:
+        resp = await cf.post(url, data=post_data)
+    except NetworkError as e:
+        raise DDLException(f"1fichier: {type(e).__name__}") from e
+
+    if resp.status_code == 404:
+        raise DDLException("1fichier: file not found")
+
+    soup = BeautifulSoup(resp.content, "html.parser")
+
+    # Success: orange download button
+    btn = soup.find("a", {"class": "ok btn-general btn-orange"})
+    if btn and btn.get("href"):
+        return btn["href"]
+
+    # Rate-limited or password-protected
+    warnings = soup.find_all("div", {"class": "ct_warn"})
+    for w in warnings:
+        text = w.get_text(separator=" ").lower()
+        if "you must wait" in text:
+            nums = [int(x) for x in text.split() if x.isdigit()]
+            wait = nums[0] if nums else "a few"
+            raise DDLException(f"1fichier: rate limited — please wait {wait} minute(s)")
+        if "protect access" in text:
+            raise DDLException(
+                "1fichier: password required — append ::<password> to the URL"
+            )
+
+    raise DDLException("1fichier: could not extract direct link from page")
+
+
+async def streamtape(url: str) -> str:
+    """
+    Streamtape direct link extractor.
+
+    The page embeds a JS expression of the form:
+      document.getElementById('robotlink').innerHTML = '/get_video?...' + ('...')
+    We regex-extract the two string fragments and assemble the URL.
+    """
+    try:
+        resp = await http.get(url, timeout=_SHORT_TIMEOUT)
+        resp.raise_for_status()
+    except NetworkError as e:
+        raise DDLException(f"streamtape: {type(e).__name__}") from e
+
+    text = resp.text
+
+    # Pattern 1: modern inline JS  `document.xxx = "..."`
+    m = _re.findall(r"robotlink['\"]?\)?[^>]*>([^<]+)<", text)
+    if m:
+        raw = m[-1].strip()
+        if raw.startswith("/"):
+            return f"https://streamtape.com{raw}"
+
+    # Pattern 2: split JS concatenation  `= '/get_video?id=...' + '...'`
+    parts = _re.findall(r"document[^=]+=\s*\"([^\"]+)\"", text)
+    if len(parts) >= 2:
+        fragment = (parts[-2] + parts[-1]).lstrip("/")
+        return f"https://streamtape.com/{fragment}"
+
+    # Pattern 3: single variable  `document.xxx = '/get_video?...'`
+    m2 = _re.findall(r"document\.(?:getElementById\(['\"]robotlink['\"]\)|[^=]+)\s*=\s*['\"]([^'\"]+)['\"]", text)
+    if m2:
+        raw = m2[-1].strip()
+        if raw.startswith("/"):
+            return f"https://streamtape.com{raw}"
+
+    raise DDLException("streamtape: could not extract video link from page")
+
+
+async def wetransfer(url: str) -> str:
+    """
+    WeTransfer direct link extractor.
+
+    Flow:
+      1. GET the we.tl / wetransfer.com URL to resolve the final transfer URL
+      2. POST /api/v4/transfers/<transfer_id>/download
+         with {"security_hash": "<hash>", "intent": "entire_transfer"}
+      3. Return direct_link from JSON response
+    """
+    try:
+        # Follow redirects to get the canonical URL with transfer_id + hash
+        resp = await cf.get(url)
+        final_url = str(resp.url)
+    except NetworkError as e:
+        raise DDLException(f"wetransfer: {type(e).__name__}") from e
+
+    # Extract transfer_id and security_hash from URL
+    # Format: https://wetransfer.com/downloads/<transfer_id>/<security_hash>
+    url_parts = final_url.rstrip("/").split("/")
+    if len(url_parts) < 2:
+        raise DDLException("wetransfer: could not parse transfer URL")
+
+    transfer_id = url_parts[-2]
+    security_hash = url_parts[-1]
+
+    try:
+        api_resp = await cf.post(
+            f"https://wetransfer.com/api/v4/transfers/{transfer_id}/download",
+            json={"security_hash": security_hash, "intent": "entire_transfer"},
+            headers={"Content-Type": "application/json"},
+        )
+        data = _json.loads(api_resp.content)
+    except NetworkError as e:
+        raise DDLException(f"wetransfer: API call failed — {type(e).__name__}") from e
+
+    if "direct_link" in data:
+        return data["direct_link"]
+    elif "message" in data:
+        raise DDLException(f"wetransfer: {data['message']}")
+    elif "error" in data:
+        raise DDLException(f"wetransfer: {data['error']}")
+    raise DDLException("wetransfer: no direct link in API response")
+
+
+async def filecrypt(url: str) -> str:
+    """
+    Filecrypt.co DLC container extractor via dcrypt.it.
+
+    Flow:
+      1. GET filecrypt.co/... → find DownloadDLC('<id>') in button onclick
+      2. GET filecrypt.co/DLC/<id>.html → DLC file content
+      3. POST dcrypt.it/decrypt/paste → JSON list of real links
+      4. Return the links as a newline-separated string
+    """
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": url,
+    }
+
+    try:
+        resp = await cf.get(url, headers={"Referer": url})
+    except NetworkError as e:
+        raise DDLException(f"filecrypt: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(resp.content, "html.parser")
+    dlc_id: str | None = None
+    for btn in soup.find_all("button"):
+        onclick = btn.get("onclick", "")
+        if "DownloadDLC(" in onclick:
+            m = _re.search(r"DownloadDLC\('([^']+)'\)", onclick)
+            if m:
+                dlc_id = m.group(1)
+                break
+
+    if not dlc_id:
+        raise DDLException("filecrypt: DLC button not found on page")
+
+    dlc_url = f"https://filecrypt.co/DLC/{dlc_id}.html"
+    try:
+        dlc_resp = await cf.get(dlc_url, headers=_HEADERS)
+    except NetworkError as e:
+        raise DDLException(f"filecrypt: DLC fetch failed — {type(e).__name__}") from e
+
+    dlc_content = dlc_resp.text
+
+    # Decrypt via dcrypt.it
+    try:
+        decrypt_resp = await http.post(
+            "http://dcrypt.it/decrypt/paste",
+            data={"content": dlc_content},
+            headers={
+                "User-Agent": _HEADERS["User-Agent"],
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": "http://dcrypt.it",
+                "Referer": "http://dcrypt.it/",
+            },
+            timeout=_SHORT_TIMEOUT,
+        )
+        decrypt_resp.raise_for_status()
+        result = _json.loads(decrypt_resp.content)
+    except NetworkError as e:
+        raise DDLException(f"filecrypt: dcrypt.it failed — {type(e).__name__}") from e
+
+    links = result.get("success", {}).get("links", [])
+    if not links:
+        raise DDLException("filecrypt: dcrypt.it returned no links")
+
+    return "\n\n".join(links)
+
+
+async def krakenfiles(url: str) -> str:
+    """
+    KrakenFiles.com direct link extractor.
+
+    Flow:
+      1. GET krakenfiles.com/... → scrape form action URL + dl-token input
+      2. POST <action_url> with {token: <dl-token>} → JSON {url: <direct_link>}
+    """
+    try:
+        resp = await http.get(url, timeout=_SHORT_TIMEOUT)
+        resp.raise_for_status()
+    except NetworkError as e:
+        raise DDLException(f"krakenfiles: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    form = soup.find("form", {"id": "dl-form"})
+    if not form:
+        raise DDLException("krakenfiles: dl-form not found on page")
+
+    action = form.get("action", "")
+    if action.startswith("//"):
+        action = "https:" + action
+    elif action.startswith("/"):
+        action = "https://krakenfiles.com" + action
+    if not action:
+        raise DDLException("krakenfiles: form action URL not found")
+
+    token_inp = soup.find("input", {"id": "dl-token"})
+    if not token_inp or not token_inp.get("value"):
+        raise DDLException("krakenfiles: dl-token input not found")
+
+    token = token_inp["value"]
+
+    try:
+        post_resp = await http.post(
+            action,
+            data={"token": token},
+            timeout=_SHORT_TIMEOUT,
+        )
+        post_resp.raise_for_status()
+        data = _json.loads(post_resp.content)
+    except NetworkError as e:
+        raise DDLException(f"krakenfiles: POST failed — {type(e).__name__}") from e
+
+    dl_url = data.get("url")
+    if not dl_url:
+        raise DDLException("krakenfiles: no URL in POST response")
+
+    return dl_url
+
+
+async def adfly(url: str) -> str:
+    """
+    Adf.ly shortener bypass.
+
+    NOTE: adf.ly was acquired by Linkvertise in 2023 and the domain now
+    serves Linkvertise's Angular SPA. The `ysmm` XOR-decryption method
+    no longer applies — `ysmm` is not present in the response HTML.
+
+    For any remaining adf.ly URLs, we attempt the ysmm decode on the
+    off-chance the link still redirects to the old system. Otherwise,
+    we raise a clear error.
+    """
+    from urllib.parse import unquote as _unquote
+    import base64 as _b64
+
+    def _decrypt(code: str) -> str:
+        a, b = "", ""
+        for i, ch in enumerate(code):
+            if i % 2 == 0:
+                a += ch
+            else:
+                b = ch + b
+        key = list(a + b)
+        i = 0
+        while i < len(key):
+            if key[i].isdigit():
+                for j in range(i + 1, len(key)):
+                    if key[j].isdigit():
+                        xor_val = int(key[i]) ^ int(key[j])
+                        if xor_val < 10:
+                            key[i] = str(xor_val)
+                        i = j
+                        break
+            i += 1
+        combined = "".join(key)
+        decoded = _b64.b64decode(combined)[16:-16]
+        return decoded.decode("utf-8")
+
+    try:
+        resp = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"adfly: {type(e).__name__}") from e
+
+    text = resp.text
+    ysmm_m = _re.findall(r"ysmm\s*=\s*['\"]([^'\"]+)['\"]", text)
+    if not ysmm_m:
+        # adf.ly now serves Linkvertise — check if it's a linkvertise page
+        if "linkvertise" in text.lower():
+            raise DDLException(
+                "adfly: adf.ly is now operated by Linkvertise — "
+                "use the linkvertise bypass instead"
+            )
+        raise DDLException("adfly: ysmm variable not found — site may have changed")
+
+    dest = _decrypt(ysmm_m[0])
+
+    if "go.php?u=" in dest:
+        dest = _b64.b64decode(_re.sub(r".*?u=", "", dest)).decode("utf-8")
+    elif "&dest=" in dest:
+        dest = _unquote(_re.sub(r".*?dest=", "", dest))
+
+    return dest
+
+
+async def onedrive(url: str) -> str:
+    """
+    OneDrive / 1drv.ms direct link generator.
+
+    Flow:
+      1. Base64-encode the share URL (without query string)
+      2. HEAD https://api.onedrive.com/v1.0/shares/u!<encoded>/root/content
+      3. Follow the 302 redirect → direct download URL
+
+    Uses httpx follow_redirects=False to capture the Location header.
+    """
+    import base64 as _b64
+
+    # Strip query string for the API call
+    link_no_query = urlparse(url)._replace(query=None).geturl()
+    encoded = _b64.b64encode(link_no_query.encode()).decode()
+    api_url = f"https://api.onedrive.com/v1.0/shares/u!{encoded}/root/content"
+
+    try:
+        resp = await http.get(
+            api_url,
+            follow_redirects=False,
+            timeout=_SHORT_TIMEOUT,
+        )
+    except NetworkError as e:
+        raise DDLException(f"OneDrive: {type(e).__name__}") from e
+
+    if resp.status_code == 302:
+        location = resp.headers.get("location", "")
+        if location:
+            return location
+        raise DDLException("OneDrive: 302 redirect but no Location header")
+
+    if resp.status_code == 401:
+        raise DDLException("OneDrive: link is private / requires sign-in")
+
+    raise DDLException(f"OneDrive: unexpected status {resp.status_code}")
