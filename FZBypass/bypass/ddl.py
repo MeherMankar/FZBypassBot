@@ -1114,69 +1114,67 @@ async def gplinks(url: str) -> str:
     """
     GPLinks shortener bypass.
 
-    NOTE: As of 2025, GPLinks replaced their countdown bypass with a
-    Razorpay premium subscription gate. The old POST /links/go flow
-    no longer works for new links.
+    GPLinks redesigned their flow in 2025:
+      - Links now show a payment gate (GPLinks Premium, Razorpay) first.
+      - A "Continue with ads" button appends ?skip_sub=1 which 302-redirects
+        to an ad intermediary site (e.g. skrresults.com).
+      - The ad site shows Google ads for 15 seconds per step (pages=3 steps).
+      - Step tracking is done via gplinks.co-set cookies (step_count, pages).
+        The step_count is only incremented server-side by gplinks.co — the ad
+        page cannot be skipped by POSTing the form directly.
+      - After all ad steps complete in a real browser, the CONTINUE button
+        submits the final URL back to the original destination.
 
-    This function is kept for legacy links that may still use the old system.
+    This multi-step ad flow cannot be bypassed via pure HTTP without a real
+    browser executing the JS and having gplinks.co track ad impressions.
+
+    We detect which state the link is in and raise a descriptive error.
     """
-    _DOMAIN = "https://gplinks.co"
-
     try:
-        # Step 1: get the vid token via redirect
-        r1 = await http.get(
+        r = await http.get(
             url,
-            follow_redirects=False,
-            timeout=_SHORT_TIMEOUT,
-        )
-        location = r1.headers.get("location", "")
-        vid = location.split("=")[-1] if "=" in location else ""
-
-        # Step 2: load the actual shortener page
-        page_url = f"{url}/?{vid}" if vid else url
-        r2 = await http.get(
-            page_url,
             headers={"Referer": "https://mynewsmedia.co/", "User-Agent": _MOBILE_UA},
             timeout=_SHORT_TIMEOUT,
         )
-        r2.raise_for_status()
+        r.raise_for_status()
     except NetworkError as e:
         raise DDLException(f"gplinks: {type(e).__name__}") from e
 
-    soup = BeautifulSoup(r2.text, "html.parser")
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    # Old system: countdown form (pre-2025 links)
     go_link = soup.find(id="go-link")
-    if not go_link:
-        # Check if it's the new premium gate (Razorpay)
-        gate = soup.find(id="gateModal")
-        if gate:
-            raise DDLException(
-                "gplinks: this link requires a GPLinks Premium subscription — bypass not possible"
+    if go_link:
+        inputs = go_link.find_all(name="input")
+        data = {inp.get("name"): inp.get("value") for inp in inputs}
+        await asleep(10)
+        try:
+            resp = await http.post(
+                "https://gplinks.co/links/go",
+                data=data,
+                headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": _MOBILE_UA},
+                timeout=_SHORT_TIMEOUT,
             )
-        raise DDLException("gplinks: go-link form not found (site may have changed)")
+            resp.raise_for_status()
+        except NetworkError as e:
+            raise DDLException(f"gplinks: POST failed — {e}") from e
+        ct = resp.headers.get("content-type", "")
+        if "application/json" in ct:
+            result = _json.loads(resp.content)
+            if "url" in result:
+                return result["url"]
+        raise DDLException("gplinks: no URL in POST response")
 
-    inputs = go_link.find_all(name="input")
-    data = {inp.get("name"): inp.get("value") for inp in inputs}
-
-    await asleep(10)
-
-    try:
-        resp = await http.post(
-            f"{_DOMAIN}/links/go",
-            data=data,
-            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": _MOBILE_UA},
-            timeout=_SHORT_TIMEOUT,
+    # New system: premium gate with optional "Continue with ads"
+    gate = soup.find(id="gateModal")
+    skip_btn = soup.find("a", class_="gate-btn-skip")
+    if gate or skip_btn:
+        raise DDLException(
+            "gplinks: link requires completing multi-step ad pages in a real browser — "
+            "pure HTTP bypass is not possible (step tracking is server-side on gplinks.co)"
         )
-        resp.raise_for_status()
-    except NetworkError as e:
-        raise DDLException(f"gplinks: POST failed — {e}") from e
 
-    ct = resp.headers.get("content-type", "")
-    if "application/json" in ct:
-        result = _json.loads(resp.content)
-        if "url" in result:
-            return result["url"]
-
-    raise DDLException("gplinks: no URL in POST response")
+    raise DDLException("gplinks: unrecognised page structure — site may have changed")
 
 
 async def fichier(url: str) -> str:
