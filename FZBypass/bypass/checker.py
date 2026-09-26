@@ -421,6 +421,8 @@ async def direct_link_checker(link, onlylink=False):
         return await fichier(link)
 
     # DL Sites
+    elif bool(match(r"https?:\/\/(www\.)?hblinks\.lol\S+", link)):
+        return await hblinks(link)
     elif bool(match(r"https?:\/\/cinevood\.\S+", link)):
         return await cinevood(link)
 

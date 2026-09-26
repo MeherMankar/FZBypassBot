@@ -586,3 +586,47 @@ async def fourkhdhub(url: str) -> str:
         out += line + "\n"
 
     return out
+
+
+async def hblinks(url: str) -> list:
+    """
+    Scrape download links from hblinks.lol archive pages.
+
+    hblinks.lol is a WordPress-based DDL index (HUBLinks).
+    Each post contains direct download buttons inside <article>
+    pointing to hubcloud, hubdrive, hubcdn, and similar DDL hosts.
+
+    Returns a list of DDL URLs found in the article body.
+    """
+    try:
+        resp = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"HBLinks: {type(e).__name__}") from e
+
+    if resp.status_code == 404:
+        raise DDLException("HBLinks: page not found")
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Extract from article, fallback to entry-content, then whole body
+    content = (
+        soup.select_one("article")
+        or soup.select_one("div.entry-content")
+        or soup.select_one("main")
+        or soup
+    )
+
+    # Collect all external links that aren't site-internal or ad networks
+    _SKIP_DOMAINS = ("hblinks.lol", "facebook.com", "twitter.com", "t.me",
+                     "instagram.com", "whatsapp.com", "google.com")
+    links = [
+        a["href"]
+        for a in content.find_all("a", href=True)
+        if a["href"].startswith("http")
+        and not any(d in a["href"] for d in _SKIP_DOMAINS)
+    ]
+
+    if not links:
+        raise DDLException("HBLinks: no download links found on page")
+
+    return links
