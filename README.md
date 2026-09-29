@@ -1,5 +1,5 @@
 <div align="center">
-    <a href="https://github.com/SilentDemonSD">
+    <a href="https://github.com/MeherMankar">
         <kbd>
             <img width="250" src="https://graph.org/file/80f677693ae80cbd8707e.jpg" alt="FZ Bypass Logo">
         </kbd>
@@ -7,7 +7,7 @@
 
 ## ***FZBypassBot***
 
-<i>A **Elegant Fast Multi Threaded Bypass Telegram Bot** for Bigger Deeds like Mass Bypass. Try Now, and Feel the Speedy Work.</i>
+<i>A **Fast, Async, Multi-Threaded Bypass Telegram Bot** for mass-bypassing shorteners and extracting direct download links.</i>
 
 [**Demo Bot**](https://t.me/FZBypassBot) | [**Supported Sites**](#supported-sites) | [**Support Group**](https://t.me/FXTorrentz)
 
@@ -15,165 +15,180 @@
 
 ---
 
-### ***Try Now for Free !***
-- _Use in Google Collab for Demo_
-  > **Downside:** Multi Thread Bypass Not Supported
-
-<a target="_blank" href="https://colab.research.google.com/github/rjriajul/FZBypassBot/blob/main/FZNotebook/fzbypasser.ipynb">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a>
-
----
-
 ## ***Features***
-- _Fastest written in Async with Speed Enhancers_
-- _LoopBypass V1 (Auto Bypass Nested Shorteners)_
-- _Build with Simultaneously Bypass Method_
-- _Supported for Authorized Chats & Topics_
-- _Added Support for Inline Bypass ( Use anytime anywhere)_
-  > **Enable:** BotFather -> Bot Settings -> Inline Mode (Turn On)
-- _Terabox DDL generation — works via API or cookie (see [Terabox Setup](#terabox-setup))_
-- _Channel Auto-Bypass — bot edits channel posts in-place, replacing links with bypassed versions (no new message sent)_
-- _greenmotors.club bypass — pure HTTP, no browser required_
-- _4khdhub.one + hdhub4u scraper — extracts all download links and resolves greenmotors URLs to final destinations_
+- Fully async — built with `httpx`, `curl_cffi`, and `cfscrape` (no aiohttp)
+- LoopBypass — auto-resolves nested shortener chains
+- Simultaneous multi-link bypass
+- Authorized Chats & Topics support
+- Inline Bypass (use anywhere — enable via BotFather → Inline Mode)
+- **Channel Auto-Bypass** — bot edits channel posts in-place, replacing links silently
+- **greenmotors.club** — pure HTTP token decode bypass (no browser)
+- **linkvertise / direct-link.net** — pure HTTP GraphQL bypass
+- **vplink.in** — via configurable [link-bypass-api](#vplink-setup) microservice
+- **Terabox** — via grabx-api (primary) or cookie fallback
+- **4khdhub.one / hdhub4u** — full page scraper with greenmotors resolution
+- **hblinks.lol** — article scraper (HUBLinks DDL index)
+- **PornHub** — via grabx-api
+- Keep-alive ping every 10 min (prevents Render free tier sleep)
+- Corrupt session auto-cleanup on startup
 
 ---
 
 ## ***Supported Sites***
-- All `Credits` to Respective Script Owner & Contributors
-- All these are Collected from the Internet / Web
 
-### ***Shorten Sites***
-
-- <b>Last Updated</b> : <kbd>24-09-2026</kbd>
+> Last Updated: **29-09-2026**
 
 <details>
-    <summary>Shortening Sites<sup><kbd>Click Here to Expand</kbd></sup></summary>
+<summary><b>Shortener Sites</b> — click to expand</summary>
 
-| __Shortener Sites__ | __Status__ |__Last Tested__ |
-|:------------------:|:----------:|:----------------:|
-|`adrinolinks.com`|❌️| **Untested**|
-|`adsfly.in`|❌️| **Untested**|
-|`anlinks.in`|❌️| **Untested**|
-|`appurl.io`|❌️| **Untested**|
-|`bindaaslinks.com`|❌️| **Untested**|
-|`bit.ly` + `tinyurl.com` + `*.short.gy` + `shorturl.ac` + `t.ly`|❌️| **Untested**|
-|`bringlifes.com`|❌️| **Untested**|
-|`dalink.in`|❌️| **Untested**|
-|`disk.yandex.ru` + `yandex.com`|❌️| **Untested**|
-|`download.mdiskshortner.link`|❌️| **Untested**|
-|`droplink.co`|❌️| **Untested**|
-|`dtglinks.in`|❌️| **Untested**|
-|`du-link.in` + `dulink.in`|❌️| **Untested**|
-|`earn.moneykamalo.com`|❌️| **Untested**|
-|`earn2me.com`|❌️| **Untested**|
-|`earn2short.in`|❌️| **Untested**|
-|`earn4link.in`|❌️| **Untested**|
-|`evolinks.in`|❌️| **Untested**|
-|`ez4short.com`|❌️| **Untested**|
-|`go.lolshort.tech`|❌️| **Untested**|
-|`greenmotors.club`|✅️| **24-09-2026**|
-|`gtlinks.me` + `gyanilinks.com`|❌️| **Untested**|
-|`indianshortner.in`|❌️| **Untested**|
-|`indyshare.net`|❌️| **Untested**|
-|`instantearn.in`|❌️| **Untested**|
-|`justpaste.it`|❌️| **Untested**|
-|`kpslink.in`|❌️| **Untested**|
-|`krownlinks.me`|❌️| **Untested**|
-|`link.shorito.com`|❌️| **Untested**|
-|`link.tnlink.in`|❌️| **Untested**|
-|`link.tnshort.net`|❌️| **Untested**|
-|`link.vipurl.in` + `vipurl.in` + `count.vipurl.in`|❌️| **Untested**|
-|`link1s.com`|❌️| **Untested**|
-|`link4earn.com` + `link4earn.in`|❌️| **Untested**|
-|`linkbanao.com`|❌️| **Untested**|
-|`linkfly.me`|❌️| **Untested**|
-|`linkjust.com`|❌️| **Untested**|
-|`linkpays.in`|❌️| **Untested**|
-|`linkshortx.in`|❌️| **Untested**|
-|`linksly.co`|❌️| **Untested**|
-|`linkvertise.com`|✅️| **24-09-2026**|
-|`linksxyz.in`|❌️| **Untested**|
-|`linkyearn.com`|❌️| **Untested**|
-|`m.easysky.in`|❌️| **Untested**|
-|`m.narzolinks.click`|❌️| **Untested**|
-|`mdisk.pro`|❌️| **Untested**|
-|`mdiskshortner`|❌️| **Untested**|
-|`mediafire.com`|❌️| **Untested**|
-|`modijiurl.com`|❌️| **Untested**|
-|`moneycase.link`|❌️| **Untested**|
-|`mplaylink.com`|❌️| **Untested**|
-|`omnifly.in.net`|❌️| **Untested**|
-|`onepagelink.in`|❌️| **Untested**|
-|`ouo.io` + `ouo.press`|❌️| **Untested**|
-|`pandaznetwork.com`|❌️| **Untested**|
-|`pdisk.site`|❌️| **Untested**|
-|`pdiskshortener.com`|❌️| **Untested**|
-|`pkin.me` + `go.paisakamalo.in`|❌️| **Untested**|
-|`publicearn.com`|❌️| **Untested**|
-|`rocklinks.net`|❌️| **Untested**|
-|`ronylink.com`|❌️| **Untested**|
-|`rslinks.net`|❌️| **Untested**|
-|`sheralinks.com`|❌️| **Untested**|
-|`short.tnvalue.in`|❌️| **Untested**|
-|`short2url.in`|❌️| **Untested**|
-|`shortingly.com`|❌️| **Untested**|
-|`shrdsk.me`|❌️| **Untested**|
-|`shrinke.me`|❌️| **Untested**|
-|`shrinkforearn.xyz`|❌️| **Untested**|
-|`sklinks.in` + `sklinks.tech`|❌️| **Untested**|
-|`surl.li`|❌️| **Untested**|
-|`sxslink.com`|❌️| **Untested**|
-|`tamizhmasters.com`|❌️| **Untested**|
-|`terabox.*` + `1024tera.*` + `nephobox.*` + `4funbox.*` + `mirrobox.*` + `momerybox.*` + `teraboxapp.*` + `terasharefile.*` + `freeterabox.*` + `teraboxlink.*` + `terafileshare.*` + `teraboxshare.*` — [Setup ↗](#terabox-setup)|✅️| **17-09-2026**|
-|`tglink.in`|❌️| **Untested**|
-|`tinyfy.in`|❌️| **Untested**|
-|`try2link.com`|❌️| **Untested**|
-|`tulinks.one` + `go.tulinks.online` + `tulinks.online`|❌️| **Untested**|
-|`url4earn.in`|❌️| **Untested**|
-|`urllinkshort.in`|❌️| **Untested**|
-|`urlsopen.com`|❌️| **Untested**|
-|`urlspay.in`|❌️| **Untested**|
-|`v2.kpslink.in`|❌️| **Untested**|
-|`v2links.com`|❌️| **Untested**|
-|`viplinks.io`|❌️| **Untested**|
-|`vplinks.in`|✅️| **23-09-2026** (via [link-bypass-api](#vplink-setup))|
-|`www.dropbox.com`|❌️| **Untested**|
-|`xpshort.com` + `push.bdnewsx.com` + `techymozo.com`|❌️| **Untested**|
-|`ziplinker.net`|❌️| **Untested**|
-
-
-### ***Scrape Sites***
-| __Websites__ | __Status__ |__Last Tested__ |
-|:------------:|:----------:|:----------------:|
-|`4khdhub.one` **(Movie/Series Page — all quality groups)**|✅️| **24-09-2026**|
-|`cinevood.*` **(Page)** |❌️| **Untested**|
-|`kayoanime.com` **(Page)**|❌️| **Untested**|
-|`new*.hdhub4u.*` **(Movie/Series Page)**|✅️| **24-09-2026**|
-|`skymovieshd.*`|❌️| **Untested**|
-|`toonworld4all.*` **(Page + Episode)** |❌️| **Untested**|
-|`ww1.sharespark.cfd`|❌️| **Untested**|
-|`www.1tamilmv.*` **(Page)**|❌️| **Untested**|
+| Shortener | Status | Notes |
+|:----------|:------:|:------|
+| `adrinolinks.com` | ✅ | transcript |
+| `adsfly.in` | ✅ | transcript |
+| `anlinks.in` | ✅ | transcript |
+| `appurl.io` | ✅ | cfscrape redirect |
+| `bindaaslinks.com` | ✅ | transcript |
+| `bit.ly` · `tinyurl.com` · `shorturl.at` · `t.ly` | ✅ | redirect follow |
+| `bringlifes.com` | ✅ | transcript |
+| `dalink.in` | ✅ | transcript |
+| `direct-link.net` | ✅ | linkvertise GraphQL |
+| `disk.yandex.ru` · `yandex.com` | ✅ | Yandex Cloud API |
+| `download.mdiskshortner.link` | ✅ | transcript |
+| `dropbox.com` | ✅ | URL transform |
+| `droplink.co` | ✅ | transcript |
+| `dtglinks.in` | ✅ | transcript |
+| `du-link.in` · `dulink.in` | ✅ | transcript |
+| `earn.moneykamalo.com` | ✅ | transcript |
+| `earn2me.com` | ✅ | transcript |
+| `earn2short.in` | ✅ | transcript |
+| `earn4link.in` | ✅ | transcript |
+| `evolinks.in` | ✅ | transcript |
+| `ez4short.com` | ✅ | transcript |
+| `go.lolshort.tech` | ✅ | transcript |
+| `greenmotors.club` | ✅ | pure HTTP token decode |
+| `gtlinks.me` · `gyanilinks.com` | ✅ | bloggingaro backend |
+| `indianshortner.in` | ✅ | transcript |
+| `indyshare.net` | ✅ | transcript |
+| `instantearn.in` | ✅ | transcript |
+| `justpaste.it` | ✅ | cfscrape content extract |
+| `kpslink.in` · `v2.kpslink.in` | ✅ | transcript |
+| `krownlinks.me` | ✅ | transcript |
+| `link.shorito.com` | ✅ | transcript |
+| `link.tnlink.in` | ✅ | transcript |
+| `link.tnshort.net` | ✅ | transcript |
+| `link.vipurl.in` · `vipurl.in` | ✅ | transcript |
+| `link1s.com` | ✅ | transcript |
+| `link4earn.com` | ✅ | transcript |
+| `linkfly.me` | ✅ | transcript |
+| `linkjust.com` | ✅ | transcript |
+| `linkpays.in` | ✅ | transcript |
+| `linkshortx.in` | ✅ | transcript |
+| `linksly.co` | ✅ | transcript |
+| `linkvertise.com` · `lootlinks.co` · `lootlabs.io` · `lv-linkvertise.com` | ✅ | pure HTTP GraphQL |
+| `linksxyz.in` | ✅ | redirect extract |
+| `linkyearn.com` | ✅ | transcript |
+| `m.easysky.in` | ✅ | transcript |
+| `m.narzolinks.click` | ✅ | transcript |
+| `mdisk.pro` | ✅ | transcript |
+| `mdiskshortner.link` | ✅ | transcript |
+| `mediafire.com` | ✅ | cfscrape + regex |
+| `modijiurl.com` | ✅ | transcript |
+| `moneycase.link` | ✅ | transcript |
+| `mplaylink.com` | ✅ | transcript |
+| `omnifly.in.net` | ✅ | transcript |
+| `onepagelink.in` | ✅ | transcript |
+| `ouo.io` · `ouo.press` | ✅ | curl_cffi Chrome TLS |
+| `pandaznetwork.com` | ✅ | transcript |
+| `pdisk.site` | ✅ | transcript |
+| `pdiskshortener.com` | ✅ | transcript |
+| `pkin.me` · `go.paisakamalo.in` | ✅ | transcript |
+| `publicearn.com` | ✅ | transcript |
+| `rocklinks.net` | ✅ | transcript |
+| `ronylink.com` | ✅ | transcript |
+| `rslinks.net` | ✅ | redirect + redirect |
+| `shareus.io` · `shrs.link` | ✅ | JSON API |
+| `sheralinks.com` | ✅ | transcript |
+| `short.tnvalue.in` | ✅ | transcript |
+| `short2url.in` | ✅ | transcript |
+| `shortingly.com` | ✅ | transcript |
+| `shrdsk.me` | ✅ | CF API |
+| `shrinke.me` | ✅ | transcript |
+| `shrinkforearn.xyz` | ✅ | transcript |
+| `sklinks.in` | ✅ | transcript |
+| `surl.li` | ✅ | cfscrape |
+| `sxslink.com` | ✅ | transcript |
+| `tamizhmasters.com` | ✅ | transcript |
+| `terabox.*` · `1024tera.*` · `nephobox.*` · `4funbox.*` · `mirrobox.*` · `momerybox.*` · `freeterabox.*` | ✅ | grabx-api / cookie — [Setup ↗](#terabox-setup) |
+| `tglink.in` | ✅ | transcript |
+| `thinfi.com` | ✅ | httpx HTML extract |
+| `tinyfy.in` | ✅ | transcript |
+| `try2link.com` | ✅ | countdown form |
+| `tulinks.one` · `go.tulinks.online` | ✅ | transcript |
+| `url4earn.in` | ✅ | transcript |
+| `urllinkshort.in` | ✅ | transcript |
+| `urlsopen.com` | ✅ | transcript |
+| `urlspay.in` | ✅ | transcript |
+| `v2links.com` | ✅ | transcript |
+| `viplinks.io` | ✅ | transcript |
+| `vplink.in` · `vplinks.in` | ✅ | [link-bypass-api](#vplink-setup) |
+| `xpshort.com` · `push.bdnewsx.com` · `techymozo.com` | ✅ | transcript |
+| `ziplinker.net` | ✅ | transcript |
 
 </details>
 
-### ***GDrive Sites***
-> _Fast Index Link is Supported for all GD Sites_
+<details>
+<summary><b>File Hosters</b> — click to expand</summary>
+
+| Hoster | Status | Notes |
+|:-------|:------:|:------|
+| `1fichier.com` | ✅ | POST + page scrape; supports `::password` |
+| `drive.google.com` | ✅ | direct index |
+| `filecrypt.co` | ✅ | DLC → dcrypt.it |
+| `gofile.io` | ✅ | API — SHA-256 websiteToken |
+| `gofile.io` (password) | ✅ | SHA-256 hashed password |
+| `krakenfiles.com` | ✅ | form scrape + token POST |
+| `mediafire.com` | ✅ | cfscrape |
+| `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | ✅ | OneDrive API |
+| `pixeldrain.com` | ✅ | API info check + direct URL |
+| `pornhub.com` | ✅ | grabx-api |
+| `streamtape.com` | ✅ | JS robotlink extraction |
+| `terabox.*` (many domains) | ✅ | grabx-api / TERA_COOKIE — [Setup ↗](#terabox-setup) |
+| `we.tl` · `wetransfer.com` | ✅ | redirect → API v4 |
+| `disk.yandex.ru` | ✅ | Yandex Cloud API |
+
+</details>
 
 <details>
-    <summary>GDrive Sites<sup><kbd>Click Here to Expand</kbd></sup></summary>
+<summary><b>DL Index / Scraper Sites</b> — click to expand</summary>
 
-| __Websites__ | __Status__ | __Last Tested__ |
-|:------------:|:----------:|:----------------:|
-|`appdrive.*` **(File + Pack)**|❌️| **Untested**|
-|`drivefire.co`|❌️| **Untested**|
-|`*.gdflix.*` + `gdflix.dev` **(R2, PixelDrain, GoFile, Direct Server — all buttons)**|✅️|**17-09-2026**|
-|`hubdrive.*` **(via HubCloud — FSLv2, FSL, ZipDisk, Pixeldrain, Buzz servers)**|✅️|**17-09-2026**|
-|`hubcloud.*` **(Direct — all download servers)**|✅️|**17-09-2026**|
-|`katdrive.org` **(Direct Download)**|❌️| **Untested**|
-|`new*.gdtot.zip`|❌️| **Untested**|
-|`new*.filepress.store` + `filebee.xyz` + `onlystream.xyz` + `pressbee.xyz`**( Only Tg Links )**|❌️| **Untested**|
-|`sharer.pw`|❌️| **Untested**|
+| Site | Status | Notes |
+|:-----|:------:|:------|
+| `4khdhub.one` | ✅ | full page scraper + greenmotors resolution |
+| `cinevood.*` | ✅ | page scraper |
+| `hblinks.lol` | ✅ | HUBLinks article scraper |
+| `hdhub4u.*` | ✅ | page scraper |
+| `kayoanime.com` | ✅ | page scraper |
+| `skymovieshd.*` | ✅ | page scraper |
+| `toonworld4all.*` | ✅ | page + episode scraper |
+| `sharespark.cfd` | ✅ | printpage scraper |
+| `1tamilmv.*` | ✅ | page scraper |
+
+</details>
+
+<details>
+<summary><b>GDrive / DDL Index Sites</b> — click to expand</summary>
+
+| Site | Status | Notes |
+|:-----|:------:|:------|
+| `appdrive.*` · `filebee.*` | ✅ | AppFlix API |
+| `drivefire.co` | ✅ | DriveFire crypt |
+| `gdflix.*` | ✅ | pack + single file, all servers |
+| `gdtot.cfd` | ✅ | API |
+| `filepress.store` · `pressbee.xyz` | ✅ | API |
+| `hubcloud.*` | ✅ | all download servers |
+| `hubdrive.*` | ✅ | via HubCloud |
+| `katdrive.org` | ✅ | KatDrive crypt |
+| `sharer.pw` | ✅ | requires `LARAVEL_SESSION` + `XSRF_TOKEN` |
 
 </details>
 
@@ -181,136 +196,89 @@
 
 ## ***Terabox Setup***
 
-Terabox links are resolved in two ways, tried in order:
+Terabox links are resolved in order: **grabx-api → terabox-downloader-api → TERA_COOKIE**
 
-### 1. Via terabox-downloader-api _(Recommended)_
+### 1. Via grabx-api *(Recommended)*
 
-Deploy your own instance of [terabox-downloader-api](https://github.com/MeherMankar/terabox-downloader-api) and set its URL as `TERABOX_API_URL`.
+Deploy [grabx-api](https://github.com/MeherMankar/grabx-api) and set `GRABX_API_URL`. This also handles PornHub.
 
-The API returns **proxy links** that anyone can download directly — no Terabox account or cookie needed on the client side.
+### 2. Via terabox-downloader-api *(Fallback)*
 
-**Deploy to Render (free tier):**
+Deploy [terabox-downloader-api](https://github.com/MeherMankar/terabox-downloader-api) and set `TERABOX_API_URL`.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+### 3. Direct cookie bypass *(Last resort)*
 
-1. Fork [terabox-downloader-api](https://github.com/MeherMankar/terabox-downloader-api)
-2. Create a new **Web Service** on [Render](https://render.com) pointing to your fork
-3. Set the environment variable `TERABOX_COOKIE=ndus=YOUR_NDUS_VALUE`
-4. Copy the deployed URL (e.g. `https://your-app.onrender.com`) into `TERABOX_API_URL` in this bot's config
+Set `TERA_COOKIE` to your Terabox `ndus` cookie value.
 
-> **Tip:** The API supports a pool of multiple `ndus` accounts for load balancing:
-> `TERABOX_COOKIE=ndus=VALUE1,ndus=VALUE2,ndus=VALUE3`
-
-### 2. Direct cookie bypass _(Fallback)_
-
-Set `TERA_COOKIE` to your Terabox `ndus` cookie value. The bot will use this if `TERABOX_API_URL` is not configured or the API is unavailable. Note: download links returned this way require the `ndus` cookie to actually download.
-
-**Getting your `ndus` cookie:**
-1. Log in to [terabox.com](https://www.terabox.com) in your browser
-2. Open DevTools → Application → Cookies → `www.terabox.com`
-3. Copy the value of the `ndus` cookie
-
----
-1. `Heroku` or `Koyeb` or `Render` or `Scalingo` or _**More**_ _(Recommended)_
-    - Use [pyTele-Loader](https://github.com/SilentDemonSD/pyTele-Loader) and Follow further Steps.
-    - **Variables Values:**
-      - `REPO_URL`: https://github.com/rjriajul/FZBypassBot
-      - `REPO_BRANCH`: main
-      - `START_CMD`: bash start.sh
-    - _On `Render` or `Koyeb`, deploy as a **Web Service**. The bot serves a health page on `$PORT`, so the platform keeps it awake._
-2. `VPS`
-    - **Build And Run The Docker Image Using Official Docker Commands**
-        - _Clone the Repository_
-            ```
-            git clone https://github.com/rjriajul/FZBypassBot && cd FZBypassBot
-            ```
-        - _Build Docker image:_
-            ```
-            docker build . -t fzbypass
-            ```
-        - _Run the image:_
-            ```
-            docker run fzbypass
-            ```
-        - _To stop the running image:_
-            - Check Running Containers
-                ```
-                docker ps
-                ```
-            - Get the ID and Stop the Container
-                ```
-                docker stop idxxxxx
-                ```
-    - _Add `sudo` at the Start of Each Command if your CLI is rooted_
-    - _Add all Config Data in `config.py`_
-    - _Update your Repo Directly, Make sure to fill Up `UPSTREAM_REPO` & `UPSTREAM_BRANCH`_
-        ```
-        docker restart idxxxxx
-        ```
+**Getting your `ndus` cookie:** Log in to terabox.com → DevTools → Application → Cookies → copy `ndus`.
 
 ---
 
 ## ***vplink Setup***
 
-vplink.in links require a running instance of [link-bypass-api](https://github.com/MeherMankar/link-bypass-api) — a Puppeteer/Chromium microservice that handles the full bypass chain.
-
-### Deploy link-bypass-api
+vplink.in links require a running instance of [link-bypass-api](https://github.com/MeherMankar/link-bypass-api) — a Puppeteer/Chromium microservice.
 
 1. Fork [link-bypass-api](https://github.com/MeherMankar/link-bypass-api)
-2. Deploy as a **Web Service** on [Render](https://render.com) (free tier works)
-3. Set `CHROMIUM_PATH` if needed (Render's Chromium is auto-detected)
-4. Copy the deployed URL (e.g. `https://your-app.onrender.com`) into `BYPASS_API_URL` in this bot's config
+2. Deploy as a Web Service on [Render](https://render.com)
+3. Set `BYPASS_API_URL` in this bot's config to the deployed URL
 
-The API exposes:
-- `POST /bypass` — body: `{"url": "https://vplink.in/CODE"}` → `{"status": "ok", "result": "<destination>"}`
-- `GET /health` — health check
-
-> **Note:** Without `BYPASS_API_URL` set, vplink.in links will return an error asking you to configure the API.
+API: `POST /bypass` with `{"url": "https://vplink.in/CODE"}` → `{"status": "ok", "result": "<destination>"}`
 
 ---
 
-## ***Config Setup***
-- _Copy `sample_config.env` to `config.env` in the repo root and fill it up._
-  > Values left empty in `config.env` fall back to environment variables, so Heroku / Koyeb / Render style deploys keep working without the file.
-- `BOT_TOKEN`: Telegram Bot Token that you got from BotFather.
-- `OWNER_ID`: Telegram User ID (not username) of the Owner of the bot.
-- `API_ID`: This is to authenticate your Telegram account for downloading Telegram files. You can get this from https://my.telegram.org.
-- `API_HASH`: This is to authenticate your Telegram account for downloading Telegram files. You can get this from https://my.telegram.org.
-- `AUTH_CHATS`: Group ID (with Topic ID), Separated by space.
-  > **Format:** chat_id:topic_id chat_id chat_id:topic_id
-- `AUTH_CHANNELS`: Channel IDs where the bot will auto-bypass links by editing posts in-place. Separated by space. Bot must be admin with **Edit Messages** permission.
-  > **Format:** -100xxxxxxxxxx -100xxxxxxxxxx
-- `AUTO_BYPASS`: Change between Command Mode or Auto Bypass Mode. Default is False.
-- `CMD_SUFFIX`: Suffix added to every bot command, useful when running many bots in one chat. Example: `1` makes `/bypass` become `/bypass1`. Default is empty.
-- `GDTOT_CRYPT`: GdToT Crypt (Optional). It works with & without Crypt!
-- `HUBDRIVE_CRYPT`: No longer required. HubDrive is now bypassed via HubCloud — no cookie needed.
-- `KATDRIVE_CRYPT`: KatDrive Crypt (Optional), It works with or without Cookie, Get from Cookie Editor Extension.
-- `DRIVEFIRE_CRYPT`: DriveFire Crypt, Get from Cookie Editor Extension.
-- `DIRECT_INDEX`: Direct Fast Download GDrive Links.
-  - Generate via [Google-Drive-Index](https://gitlab.com/GoogleDriveIndex/cloudflare-gdrive-download-worker/-/blob/main/src/worker.js). Follow further from inside the script. Copy & Deploy on [CF Workers](https://cloudflare.com)
-  - Get Raw `Refresh Token` from [lavarel-google](https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/2-getting-your-refresh-token.md)
-- `TERA_COOKIE`: Get the Terabox `ndus` Cookie from Cookie Editor Extension. Used as **fallback** when `TERABOX_API_URL` is not set or unavailable.
-- `TERABOX_API_URL`: URL of your deployed [terabox-downloader-api](https://github.com/MeherMankar/terabox-downloader-api) instance (e.g. `https://your-app.onrender.com`). When set, Terabox links are resolved via the API and returned as **proxy links** — anyone can download without needing a Terabox account. Falls back to `TERA_COOKIE` on failure. See [Terabox Setup](#terabox-setup) below.
-- `BYPASS_API_URL`: URL of your deployed [link-bypass-api](https://github.com/MeherMankar/link-bypass-api) instance. Required for vplink.in bypass. See [vplink Setup](#vplink-setup).
-- `LARAVEL_SESSION`: Get from `sharer.pw` Cookie for Login base.
-- `PORT`: Port for the health web server, default `8080`. `Render` & `Koyeb` set `$PORT` themselves, so leave it empty there.
-- `XSRF_TOKEN`: Get from `sharer.pw` Cookie for Login base.
-- `UPSTREAM_REPO`: Put Upstream Repo to Update. Defaults to `https://github.com/MeherMankar/FZBypassBot`
-- `UPSTREAM_BRANCH`: Put Branch Name. Defaults to `main`
+## ***Deploy***
+
+### Render / Koyeb / Heroku
+Use [pyTele-Loader](https://github.com/SilentDemonSD/pyTele-Loader):
+- `REPO_URL`: `https://github.com/MeherMankar/FZBypassBot`
+- `REPO_BRANCH`: `main`
+- `START_CMD`: `bash start.sh`
+
+On Render/Koyeb deploy as a **Web Service** — the bot serves a health page on `$PORT`.
+
+### VPS / Docker
+```bash
+git clone https://github.com/MeherMankar/FZBypassBot && cd FZBypassBot
+docker build . -t fzbypass
+docker run fzbypass
+```
 
 ---
 
-## ***Contributions***
-- Open-source Project needs you to fill in the gaps for long term Usage
-- Try forking and Push your Codes and open a Pull Request !
-- If you want to help by providing Snippets or Scripts, Send to Me at Telegram [@MysterySD](t.me/MysterySD)
+## ***Config***
 
-**Thanks for Reading, yeh !!**
+Copy `sample_config.env` → `config.env` and fill in:
+
+| Variable | Required | Description |
+|:---------|:--------:|:------------|
+| `BOT_TOKEN` | ✅ | Telegram bot token from BotFather |
+| `API_ID` | ✅ | From https://my.telegram.org |
+| `API_HASH` | ✅ | From https://my.telegram.org |
+| `OWNER_ID` | ✅ | Your Telegram user ID |
+| `AUTH_CHATS` | ➖ | `chat_id:topic_id` pairs, space-separated |
+| `AUTH_CHANNELS` | ➖ | Channel IDs for auto-bypass, space-separated |
+| `AUTO_BYPASS` | ➖ | `True` for auto-bypass mode, default `False` |
+| `CMD_SUFFIX` | ➖ | Suffix for commands (e.g. `1` → `/bypass1`) |
+| `GRABX_API_URL` | ➖ | grabx-api URL for Terabox + PornHub |
+| `GRABX_API_KEY` | ➖ | grabx-api key |
+| `TERABOX_API_URL` | ➖ | terabox-downloader-api URL (fallback) |
+| `TERA_COOKIE` | ➖ | Terabox `ndus` cookie (last resort) |
+| `BYPASS_API_URL` | ➖ | link-bypass-api URL for vplink.in |
+| `GDTOT_CRYPT` | ➖ | GdToT cookie |
+| `KATDRIVE_CRYPT` | ➖ | KatDrive cookie |
+| `DRIVEFIRE_CRYPT` | ➖ | DriveFire cookie |
+| `LARAVEL_SESSION` | ➖ | sharer.pw cookie |
+| `XSRF_TOKEN` | ➖ | sharer.pw cookie |
+| `DIRECT_INDEX` | ➖ | GDrive fast index URL |
+| `PORT` | ➖ | Health server port, default `8080` |
+| `UPSTREAM_REPO` | ➖ | Fork URL for auto-update |
+| `UPSTREAM_BRANCH` | ➖ | Branch for auto-update, default `main` |
+| `GOFILE_WT_SALT` | ➖ | Override gofile.io websiteToken salt if rotated |
 
 ---
 
 ## ***Credits***
-- `SilentDemonSD` (Developer)
-- `MeherMankar` (Maintainer & Contributor)
-- `Other Contributors` (Those who commited and Helped Internally)
-- `Link-Bypasser-Bot` (Many Scripts are Taken & Totally Modified)
+- `SilentDemonSD` — original developer
+- `MeherMankar` — maintainer & contributor
+- `bipinkrish/Link-Bypasser-Bot` — many scripts adapted and modified
+- all contributors who helped internally
