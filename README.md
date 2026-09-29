@@ -41,98 +41,28 @@
 <details>
 <summary><b>Shortener Sites</b> — click to expand</summary>
 
-| Shortener | Status | Notes |
-|:----------|:------:|:------|
-| `adrinolinks.com` | ✅ | transcript |
-| `adsfly.in` | ✅ | transcript |
-| `anlinks.in` | ✅ | transcript |
-| `appurl.io` | ✅ | cfscrape redirect |
-| `bindaaslinks.com` | ✅ | transcript |
+> Note: All shorteners below use their own dedicated bypass functions (not the generic `transcript()` method which is broken across the board as of late 2026 due to `/links/go` endpoint changes).
+
+| Shortener | Status | Method |
+|:----------|:------:|:-------|
 | `bit.ly` · `tinyurl.com` · `shorturl.at` · `t.ly` | ✅ | redirect follow |
-| `bringlifes.com` | ✅ | transcript |
-| `dalink.in` | ✅ | transcript |
-| `direct-link.net` | ✅ | linkvertise GraphQL |
+| `direct-link.net` · `linkvertise.com` · `lootlinks.co` · `lootlabs.io` · `lv-linkvertise.com` | ✅ | pure HTTP GraphQL |
 | `disk.yandex.ru` · `yandex.com` | ✅ | Yandex Cloud API |
-| `download.mdiskshortner.link` | ✅ | transcript |
 | `dropbox.com` | ✅ | URL transform |
-| `droplink.co` | ✅ | transcript |
-| `dtglinks.in` | ✅ | transcript |
-| `du-link.in` · `dulink.in` | ✅ | transcript |
-| `earn.moneykamalo.com` | ✅ | transcript |
-| `earn2me.com` | ✅ | transcript |
-| `earn2short.in` | ✅ | transcript |
-| `earn4link.in` | ✅ | transcript |
-| `evolinks.in` | ✅ | transcript |
-| `ez4short.com` | ✅ | transcript |
-| `go.lolshort.tech` | ✅ | transcript |
-| `greenmotors.club` | ✅ | pure HTTP token decode |
-| `gtlinks.me` · `gyanilinks.com` | ✅ | bloggingaro backend |
-| `indianshortner.in` | ✅ | transcript |
-| `indyshare.net` | ✅ | transcript |
-| `instantearn.in` | ✅ | transcript |
+| `greenmotors.club` | ✅ | pure HTTP token decode chain |
+| `gyanilinks.com` · `gtlinks.me` | ✅ | bloggingaro backend |
 | `justpaste.it` | ✅ | cfscrape content extract |
-| `kpslink.in` · `v2.kpslink.in` | ✅ | transcript |
-| `krownlinks.me` | ✅ | transcript |
-| `link.shorito.com` | ✅ | transcript |
-| `link.tnlink.in` | ✅ | transcript |
-| `link.tnshort.net` | ✅ | transcript |
-| `link.vipurl.in` · `vipurl.in` | ✅ | transcript |
-| `link1s.com` | ✅ | transcript |
-| `link4earn.com` | ✅ | transcript |
-| `linkfly.me` | ✅ | transcript |
-| `linkjust.com` | ✅ | transcript |
-| `linkpays.in` | ✅ | transcript |
-| `linkshortx.in` | ✅ | transcript |
-| `linksly.co` | ✅ | transcript |
-| `linkvertise.com` · `lootlinks.co` · `lootlabs.io` · `lv-linkvertise.com` | ✅ | pure HTTP GraphQL |
 | `linksxyz.in` | ✅ | redirect extract |
-| `linkyearn.com` | ✅ | transcript |
-| `m.easysky.in` | ✅ | transcript |
-| `m.narzolinks.click` | ✅ | transcript |
-| `mdisk.pro` | ✅ | transcript |
-| `mdiskshortner.link` | ✅ | transcript |
 | `mediafire.com` | ✅ | cfscrape + regex |
-| `modijiurl.com` | ✅ | transcript |
-| `moneycase.link` | ✅ | transcript |
-| `mplaylink.com` | ✅ | transcript |
-| `omnifly.in.net` | ✅ | transcript |
-| `onepagelink.in` | ✅ | transcript |
-| `ouo.io` · `ouo.press` | ✅ | curl_cffi Chrome TLS |
-| `pandaznetwork.com` | ✅ | transcript |
-| `pdisk.site` | ✅ | transcript |
-| `pdiskshortener.com` | ✅ | transcript |
-| `pkin.me` · `go.paisakamalo.in` | ✅ | transcript |
-| `publicearn.com` | ✅ | transcript |
-| `rocklinks.net` | ✅ | transcript |
-| `ronylink.com` | ✅ | transcript |
-| `rslinks.net` | ✅ | redirect + redirect |
+| `ouo.io` · `ouo.press` | ✅ | curl_cffi Chrome TLS + reCAPTCHA |
+| `rslinks.net` | ✅ | redirect chain |
 | `shareus.io` · `shrs.link` | ✅ | JSON API |
-| `sheralinks.com` | ✅ | transcript |
-| `short.tnvalue.in` | ✅ | transcript |
-| `short2url.in` | ✅ | transcript |
-| `shortingly.com` | ✅ | transcript |
 | `shrdsk.me` | ✅ | CF API |
-| `shrinke.me` | ✅ | transcript |
-| `shrinkforearn.xyz` | ✅ | transcript |
-| `sklinks.in` | ✅ | transcript |
 | `surl.li` | ✅ | cfscrape |
-| `sxslink.com` | ✅ | transcript |
-| `tamizhmasters.com` | ✅ | transcript |
-| `terabox.*` · `1024tera.*` · `nephobox.*` · `4funbox.*` · `mirrobox.*` · `momerybox.*` · `freeterabox.*` | ✅ | grabx-api / cookie — [Setup ↗](#terabox-setup) |
-| `tglink.in` | ✅ | transcript |
 | `thinfi.com` | ✅ | httpx HTML extract |
-| `tinyfy.in` | ✅ | transcript |
 | `try2link.com` | ✅ | countdown form |
-| `tulinks.one` · `go.tulinks.online` | ✅ | transcript |
-| `url4earn.in` | ✅ | transcript |
-| `urllinkshort.in` | ✅ | transcript |
-| `urlsopen.com` | ✅ | transcript |
-| `urlspay.in` | ✅ | transcript |
-| `v2links.com` | ✅ | transcript |
-| `viplinks.io` | ✅ | transcript |
 | `vplink.in` · `vplinks.in` | ✅ | [link-bypass-api](#vplink-setup) |
-| `xpshort.com` · `push.bdnewsx.com` · `techymozo.com` | ✅ | transcript |
-| `ziplinker.net` | ✅ | transcript |
+| `appurl.io` | ✅ | cfscrape redirect |
 
 </details>
 
