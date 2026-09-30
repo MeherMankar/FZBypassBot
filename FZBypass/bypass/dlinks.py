@@ -509,13 +509,42 @@ async def hubcloud(url: str) -> str:
         host = urlparse(href).hostname or ""
         if not host or host in EXCLUDED_HOSTS:
             continue
+        # Skip Telegram bot links and watch/online buttons
+        if "hubcloud.ist/tg/" in href:
+            continue
         cls = " ".join(a.get("class", []))
         if "btn" not in cls:
+            continue
+        # Skip watch/online buttons
+        page_text_raw = a.get_text(strip=True).lower()
+        if any(kw in page_text_raw for kw in ["watch", "online", "stream", "telegram"]):
             continue
         if href in seen:
             continue
         seen.add(href)
-        links.append((_label(href), href))
+        # Use page label if available, fall back to domain-based label
+        page_text = a.get_text(strip=True)
+        if page_text and "Download" in page_text:
+            m_label = _re.search(r'\[(.+?)\]', page_text)
+            if m_label:
+                raw_label = m_label.group(1).strip()
+                # Normalize known labels
+                label_lower = raw_label.lower()
+                if "pixel" in label_lower:
+                    label = "Pixeldrain"
+                elif "fsl" in label_lower or "r2.cloud" in href:
+                    label = "FSL Server"
+                elif "10gbps" in label_lower or "gpdl" in label_lower:
+                    label = "10Gbps Server"
+                elif "buzz" in label_lower:
+                    label = "Buzz Server"
+                else:
+                    label = raw_label
+            else:
+                label = _label(href)
+        else:
+            label = _label(href)
+        links.append((label, href))
 
     if not links:
         raise DDLException("HubCloud: no download links found")
