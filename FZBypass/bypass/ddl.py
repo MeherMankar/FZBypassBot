@@ -1765,14 +1765,21 @@ async def shrinkme(url: str) -> str:
 
         if "mrproblogger" not in str(page.url):
             raise DDLException(
-                f"shrinkme: mrproblogger redirected away — seeding failed"
+                f"shrinkme: mrproblogger redirected to {str(page.url)[:60]}"
             )
 
         html = page.text
         soup = BeautifulSoup(html, "html.parser")
+
+        # Check for Cloudflare challenge
+        if "Just a moment" in html or "cf-browser-verification" in html:
+            raise DDLException("shrinkme: mrproblogger blocked by Cloudflare")
+
         form = soup.select_one("form#go-link")
         if not form:
-            raise DDLException("shrinkme: go-link form not found")
+            # Log what the page actually contains to help debug
+            title = soup.title.text.strip()[:50] if soup.title else "no title"
+            raise DDLException(f"shrinkme: go-link form not found (title='{title}')")
 
         hidden = {
             inp.get("name"): inp.get("value", "")
