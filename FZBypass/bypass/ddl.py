@@ -1681,19 +1681,26 @@ async def shrinkme(url: str) -> str:
       1. Extract the alias from the shrinkme URL
       2. GET https://en.mrproblogger.com/<alias> with Referer: https://themezon.net/
          → returns the countdown page with form#go-link
-      3. Wait for the timer (counter_value from app_vars, default 12s)
+      3. Wait for the timer (~11s minimum enforced server-side)
       4. POST /links/go with hidden form fields
          → JSON {"status": "success", "url": "<destination>"}
 
     No Turnstile, no browser required.
     """
-    import asyncio as _asyncio
-
     _MRPRO = "https://en.mrproblogger.com"
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     )
+    # Multiple themezon article referers to try — datacenter IPs may be
+    # blocked by some but not all paths
+    _REFERERS = [
+        "https://themezon.net/",
+        "https://themezon.net/category/blogging/",
+        "https://themezon.net/make-money-online/",
+        "https://themezon.net/how-to/",
+        "https://en.themezon.net/",
+    ]
 
     alias = url.rstrip("/").split("/")[-1]
     if not alias:
@@ -1705,63 +1712,73 @@ async def shrinkme(url: str) -> str:
         import time as _time
         from curl_cffi.requests import Session as _CurlSess
 
-        with _CurlSess(impersonate="chrome136") as sess:
-            page = sess.get(
-                mrpro_url,
-                headers={"User-Agent": _UA, "Referer": "https://themezon.net/"},
-                allow_redirects=True,
-                timeout=30,
-            )
+        last_err = "no response"
+        for referer in _REFERERS:
+            with _CurlSess(impersonate="chrome136") as sess:
+                page = sess.get(
+                    mrpro_url,
+                    headers={"User-Agent": _UA, "Referer": referer},
+                    allow_redirects=True,
+                    timeout=30,
+                )
 
-        if page.status_code == 404:
-            raise DDLException(f"shrinkme: alias '{alias}' not found on mrproblogger")
+            if page.status_code == 404:
+                raise DDLException(f"shrinkme: alias '{alias}' not found")
 
-        html = page.text
-        soup = BeautifulSoup(html, "html.parser")
-        form = soup.select_one("form#go-link")
-        if not form:
-            raise DDLException("shrinkme: go-link form not found — site may have changed")
+            # If redirected away from mrproblogger, try next referer
+            if "mrproblogger" not in str(page.url):
+                last_err = f"redirected to {page.url}"
+                continue
 
-        hidden = {
-            inp.get("name"): inp.get("value", "")
-            for inp in form.find_all("input")
-            if inp.get("name")
-        }
-        action = form.get("action") or "/links/go"
-        if not action.startswith("http"):
-            action = f"{_MRPRO}{action}"
+            html = page.text
+            soup = BeautifulSoup(html, "html.parser")
+            form = soup.select_one("form#go-link")
+            if not form:
+                last_err = "go-link form not found"
+                continue
 
-        # Extract timer — use counter_value - 1 as minimum wait
-        # Server enforces server-side timestamp: counter_value=12 works at 11s
-        counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
-        counter = int(counter_m.group(1)) if counter_m else 12
-        _time.sleep(max(11, counter - 1))
+            hidden = {
+                inp.get("name"): inp.get("value", "")
+                for inp in form.find_all("input")
+                if inp.get("name")
+            }
+            action = form.get("action") or "/links/go"
+            if not action.startswith("http"):
+                action = f"{_MRPRO}{action}"
 
-        with _CurlSess(impersonate="chrome136") as sess2:
-            r2 = sess2.post(
-                action,
-                data=hidden,
-                headers={
-                    "User-Agent": _UA,
-                    "Referer": str(page.url),
-                    "Origin": _MRPRO,
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                },
-                timeout=30,
-            )
+            # Wait for server-side timer (minimum 11s)
+            counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
+            counter = int(counter_m.group(1)) if counter_m else 12
+            _time.sleep(max(11, counter - 1))
 
-        try:
-            data = _json.loads(r2.content)
-        except Exception:
-            raise DDLException(f"shrinkme: invalid JSON response")
+            with _CurlSess(impersonate="chrome136") as sess2:
+                r2 = sess2.post(
+                    action,
+                    data=hidden,
+                    headers={
+                        "User-Agent": _UA,
+                        "Referer": str(page.url),
+                        "Origin": _MRPRO,
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                    },
+                    timeout=30,
+                )
 
-        dest = data.get("url")
-        if not dest:
-            msg = data.get("message", "no URL in response")
-            raise DDLException(f"shrinkme: {msg}")
+            try:
+                data = _json.loads(r2.content)
+            except Exception:
+                last_err = "invalid JSON response"
+                continue
 
-        return dest
+            dest = data.get("url")
+            if not dest:
+                last_err = data.get("message", "no URL in response")
+                continue
+
+            return dest
+
+        raise DDLException(f"shrinkme: {last_err}")
 
     import asyncio as _asyncio
     try:
