@@ -1677,112 +1677,106 @@ async def shrinkme(url: str) -> str:
     """
     shrinkme.click / shrinkme.io shortener bypass — pure HTTP, no browser.
 
-    Uses the MrProBlogger direct shortcut discovered by IndraYuda13/shortlink-bypass-bot:
-      1. Extract the alias from the shrinkme URL
-      2. GET https://en.mrproblogger.com/<alias> with Referer: https://themezon.net/
-         → returns the countdown page with form#go-link
-      3. Wait for the timer (~11s minimum enforced server-side)
-      4. POST /links/go with hidden form fields
-         → JSON {"status": "success", "url": "<destination>"}
+    The trick (analogous to vplink's gt_uc_ cookie):
+      1. Visit shrinkme.click/<alias> first — this seeds a `ref<alias>` cookie
+         that mrproblogger uses to verify the visitor came from a real shrinkme session
+      2. GET https://en.mrproblogger.com/<alias> with the seeded cookies
+         + Referer: https://themezon.net/ → form#go-link is served even from datacenter IPs
+      3. Wait ~11s (server-side cryptographic timer in ad_form_data)
+      4. POST /links/go → JSON {"status": "success", "url": "<destination>"}
 
-    No Turnstile, no browser required.
+    No Turnstile, no browser, no external API required.
     """
     _MRPRO = "https://en.mrproblogger.com"
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     )
-    # Multiple themezon article referers to try — datacenter IPs may be
-    # blocked by some but not all paths
-    _REFERERS = [
-        "https://themezon.net/",
-        "https://themezon.net/category/blogging/",
-        "https://themezon.net/make-money-online/",
-        "https://themezon.net/how-to/",
-        "https://en.themezon.net/",
-    ]
 
     alias = url.rstrip("/").split("/")[-1]
     if not alias:
         raise DDLException("shrinkme: could not extract alias from URL")
 
+    # Normalise to shrinkme.click domain
+    shrinkme_url = f"https://shrinkme.click/{alias}"
     mrpro_url = f"{_MRPRO}/{alias}"
 
     def _run_sync() -> str:
         import time as _time
         from curl_cffi.requests import Session as _CurlSess
 
-        last_err = "no response"
-        for referer in _REFERERS:
-            with _CurlSess(impersonate="chrome136") as sess:
-                page = sess.get(
-                    mrpro_url,
-                    headers={"User-Agent": _UA, "Referer": referer},
-                    allow_redirects=True,
-                    timeout=30,
-                )
+        sess = _CurlSess(impersonate="chrome136")
 
-            if page.status_code == 404:
-                raise DDLException(f"shrinkme: alias '{alias}' not found")
+        # Step 1: seed ref<alias> cookie by visiting shrinkme.click
+        try:
+            sess.get(shrinkme_url, headers={"User-Agent": _UA},
+                     allow_redirects=True, timeout=15)
+        except Exception:
+            pass  # best-effort — proceed anyway
 
-            # If redirected away from mrproblogger, try next referer
-            if "mrproblogger" not in str(page.url):
-                last_err = f"redirected to {page.url}"
-                continue
+        # Step 2: hit mrproblogger with seeded session
+        page = sess.get(
+            mrpro_url,
+            headers={"User-Agent": _UA, "Referer": "https://themezon.net/"},
+            allow_redirects=True,
+            timeout=30,
+        )
 
-            html = page.text
-            soup = BeautifulSoup(html, "html.parser")
-            form = soup.select_one("form#go-link")
-            if not form:
-                last_err = "go-link form not found"
-                continue
+        if page.status_code == 404:
+            raise DDLException(f"shrinkme: alias '{alias}' not found")
 
-            hidden = {
-                inp.get("name"): inp.get("value", "")
-                for inp in form.find_all("input")
-                if inp.get("name")
-            }
-            action = form.get("action") or "/links/go"
-            if not action.startswith("http"):
-                action = f"{_MRPRO}{action}"
+        if "mrproblogger" not in str(page.url):
+            raise DDLException(
+                f"shrinkme: mrproblogger redirected away — seeding failed"
+            )
 
-            # Wait for server-side timer (minimum 11s)
-            counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
-            counter = int(counter_m.group(1)) if counter_m else 12
-            _time.sleep(max(11, counter - 1))
+        html = page.text
+        soup = BeautifulSoup(html, "html.parser")
+        form = soup.select_one("form#go-link")
+        if not form:
+            raise DDLException("shrinkme: go-link form not found")
 
-            with _CurlSess(impersonate="chrome136") as sess2:
-                r2 = sess2.post(
-                    action,
-                    data=hidden,
-                    headers={
-                        "User-Agent": _UA,
-                        "Referer": str(page.url),
-                        "Origin": _MRPRO,
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "application/json, text/javascript, */*; q=0.01",
-                    },
-                    timeout=30,
-                )
+        hidden = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = form.get("action") or "/links/go"
+        if not action.startswith("http"):
+            action = f"{_MRPRO}{action}"
 
-            try:
-                data = _json.loads(r2.content)
-            except Exception:
-                last_err = "invalid JSON response"
-                continue
+        # Step 3: wait for server-side timer (minimum 11s)
+        counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 12
+        _time.sleep(max(11, counter - 1))
 
-            dest = data.get("url")
-            if not dest:
-                last_err = data.get("message", "no URL in response")
-                continue
+        # Step 4: submit
+        r2 = sess.post(
+            action,
+            data=hidden,
+            headers={
+                "User-Agent": _UA,
+                "Referer": str(page.url),
+                "Origin": _MRPRO,
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+            timeout=30,
+        )
 
-            return dest
+        try:
+            data = _json.loads(r2.content)
+        except Exception:
+            raise DDLException("shrinkme: invalid JSON response")
 
-        raise DDLException(f"shrinkme: {last_err}")
+        dest = data.get("url")
+        if not dest:
+            raise DDLException(f"shrinkme: {data.get('message', 'no URL in response')}")
 
-    import asyncio as _asyncio
+        return dest
+
     try:
-        return await _asyncio.to_thread(_run_sync)
+        return await asyncio.to_thread(_run_sync)
     except DDLException:
         raise
     except Exception as e:
