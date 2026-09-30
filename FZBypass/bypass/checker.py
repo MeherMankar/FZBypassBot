@@ -86,6 +86,14 @@ async def direct_link_checker(link, onlylink=False):
         blink = await try2link(link)
     elif bool(match(r"https?:\/\/(gyanilinks|gtlinks)\.\S+", link)):
         blink = await gyanilinks(link)
+    elif bool(match(r"https?:\/\/(aylink\.co|ay\.live)\S+", link)):
+        blink = await aylink(link)
+    elif bool(match(r"https?:\/\/(cpmlink\.(co|pro)|cpm\.link)\S+", link)):
+        blink = await cpmlink(link)
+    elif bool(match(r"https?:\/\/(boost\.ink|mboost\.me|bst\.gg|booo\.st)\S+", link)):
+        blink = await boost(link)
+    elif bool(match(r"https?:\/\/(shrinkme\.click|shrinkme\.io)\S+", link)):
+        blink = await shrinkme(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
         blink = await ouo(link)
     elif bool(match(r"https?:\/\/(shareus|shrs)\.\S+", link)):

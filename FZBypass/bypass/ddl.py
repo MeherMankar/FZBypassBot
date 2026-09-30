@@ -1407,3 +1407,366 @@ async def onedrive(url: str) -> str:
     raise DDLException(f"OneDrive: unexpected status {resp.status_code}")
 
 
+
+
+async def aylink(url: str) -> str:
+    """
+    aylink.co / ay.live shortener bypass.
+
+    Token flow (from KaramelliS/shortlink-bypass):
+      1. GET aylink.co/<slug>  → extract _a, _t, _d tokens + csrf + visitor_token
+      2. POST /get/tk          → session key (th)
+      3. POST /links/go2 with fake browser signal → destination URL
+      4. Follow bildirim.online intermediate if present
+
+    Uses curl_cffi for Chrome TLS fingerprint (aylink uses Cloudflare).
+    """
+    import time as _time
+
+    _DOMAIN = "https://aylink.co"
+    _UA = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    )
+
+    # ay.live redirects to aylink.co — resolve slug first
+    slug = url.rstrip("/").split("/")[-1]
+
+    try:
+        with cSession(impersonate="chrome120") as sess:
+            # Step 1: landing page
+            page = sess.get(
+                f"{_DOMAIN}/{slug}",
+                headers={"User-Agent": _UA},
+                timeout=30,
+            )
+            html = page.text
+
+        # Extract tokens
+        _a = _re.search(r"_a\s*=\s*'([^']+)'", html)
+        _t = _re.search(r"_t\s*=\s*'([^']+)'", html)
+        _d = _re.search(r"_d\s*=\s*'([^']+)'", html)
+        csrf = _re.search(r'csrf"\s*value="([^"]+)"', html)
+        tok = _re.search(r"\['token'\]\s*=\s*'([^']+)'", html)
+
+        if not all([_a, _t, _d, csrf, tok]):
+            raise DDLException("aylink: tokens not found on page")
+
+        _a_val = _a.group(1)
+        _t_val = _t.group(1)
+        _d_val = _d.group(1)
+        csrf_val = csrf.group(1)
+        tok_val = tok.group(1)
+        ref = f"{_DOMAIN}/{slug}"
+
+        # Step 2: get session key
+        with cSession(impersonate="chrome120") as sess:
+            tk_resp = sess.post(
+                f"{_DOMAIN}/get/tk",
+                data={"_a": _a_val, "_t": _t_val, "_d": _d_val},
+                headers={
+                    "User-Agent": _UA,
+                    "Referer": ref,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Origin": _DOMAIN,
+                },
+                timeout=20,
+            )
+            tk_data = _json.loads(tk_resp.content)
+            tk_val = tk_data.get("th")
+            if not tk_val:
+                raise DDLException("aylink: failed to get session key")
+
+            # Step 3: go2 with fake browser signal
+            signal = _json.dumps({
+                "t": int(_time.time()), "d": 5,
+                "m": {"move": 5, "click": 1, "scroll": 1, "key": 0, "touch": 0, "focus": 1},
+                "f": {"webdriver": False, "headless": False, "noPlugins": False, "mobile": False},
+            })
+            go2_resp = sess.post(
+                f"{_DOMAIN}/links/go2",
+                data={
+                    "alias": slug, "csrf": csrf_val,
+                    "tkn": tk_val, "visitor_token": tok_val,
+                    "signal": signal,
+                },
+                headers={
+                    "User-Agent": _UA,
+                    "Referer": ref,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Origin": _DOMAIN,
+                },
+                timeout=20,
+            )
+            go2_data = _json.loads(go2_resp.content)
+            dest = go2_data.get("url", "")
+
+        if not dest:
+            raise DDLException("aylink: no destination URL in response")
+
+        # Follow bildirim.online intermediate if present
+        if "bildirim.online" in dest:
+            try:
+                r2 = await http.get(dest, headers={"User-Agent": _UA, "Referer": ref},
+                                    timeout=_SHORT_TIMEOUT)
+                m = _re.search(r"url\s*=\s*'([^']+)'", r2.text)
+                if m:
+                    dest = m.group(1)
+            except NetworkError:
+                pass
+
+        return dest
+
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"aylink: {type(e).__name__} — {e}") from e
+
+
+async def cpmlink(url: str) -> str:
+    """
+    cpmlink.co / cpmlink.pro / cpm.link shortener bypass.
+
+    Same token flow as aylink — /get/tk → /links/go2.
+    Adapted from KaramelliS/shortlink-bypass.
+    """
+    import time as _time
+
+    _DOMAIN = "https://cpmlink.pro"
+    _UA = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    )
+
+    # Resolve to cpmlink.pro if cpm.link or cpmlink.co
+    slug = url.rstrip("/").split("/")[-1]
+
+    try:
+        with cSession(impersonate="chrome120") as sess:
+            page = sess.get(
+                f"{_DOMAIN}/{slug}",
+                headers={"User-Agent": _UA},
+                timeout=30,
+            )
+            html = page.text
+
+        _a = _re.search(r"_a\s*=\s*'([^']+)'", html)
+        _t = _re.search(r"_t\s*=\s*'([^']+)'", html)
+        _d = _re.search(r"_d\s*=\s*'([^']+)'", html)
+        csrf = _re.search(r'csrf"\s*value="([^"]+)"', html)
+        vtoken = _re.search(r"app\['token'\]\s*=\s*'([^']+)'", html)
+        alias = _re.search(r"app\['alias'\]\s*=\s*'([^']+)'", html)
+
+        if not all([_a, _t, _d, csrf, vtoken]):
+            raise DDLException("cpmlink: tokens not found on page")
+
+        _a_val = _a.group(1)
+        _t_val = _t.group(1)
+        _d_val = _d.group(1)
+        csrf_val = csrf.group(1)
+        vtoken_val = vtoken.group(1)
+        slug = alias.group(1) if alias else slug
+        ref = f"{_DOMAIN}/{slug}"
+
+        with cSession(impersonate="chrome120") as sess:
+            tk_resp = sess.post(
+                f"{_DOMAIN}/get/tk",
+                data={"_a": _a_val, "_t": _t_val, "_d": _d_val},
+                headers={
+                    "User-Agent": _UA,
+                    "Referer": ref,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Origin": _DOMAIN,
+                },
+                timeout=20,
+            )
+            tk_data = _json.loads(tk_resp.content)
+            tk_val = tk_data.get("th")
+            if not tk_val:
+                raise DDLException("cpmlink: failed to get session key")
+
+            signal = _json.dumps({
+                "t": int(_time.time()), "d": 5,
+                "m": {"move": 5, "click": 1, "scroll": 1, "key": 0, "touch": 0, "focus": 1},
+                "f": {"webdriver": False, "headless": False, "noPlugins": False, "mobile": False},
+            })
+            go2_resp = sess.post(
+                f"{_DOMAIN}/links/go2",
+                data={
+                    "alias": slug, "csrf": csrf_val,
+                    "tkn": tk_val, "visitor_token": vtoken_val,
+                    "signal": signal,
+                },
+                headers={
+                    "User-Agent": _UA,
+                    "Referer": ref,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Origin": _DOMAIN,
+                },
+                timeout=20,
+            )
+            dest = _json.loads(go2_resp.content).get("url", "")
+
+        if not dest:
+            raise DDLException("cpmlink: no destination URL in response")
+
+        if "bildirim.online" in dest:
+            try:
+                r2 = await http.get(dest, headers={"User-Agent": _UA, "Referer": ref},
+                                    timeout=_SHORT_TIMEOUT)
+                m = _re.search(r"url\s*=\s*'([^']+)'", r2.text)
+                if m:
+                    dest = m.group(1)
+            except NetworkError:
+                pass
+
+        return dest
+
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"cpmlink: {type(e).__name__} — {e}") from e
+
+
+async def boost(url: str) -> str:
+    """
+    boost.ink / mboost.me shortener bypass.
+
+    The page embeds a base64-encoded destination in a JS variable `kekw`.
+    Decode it to get the real URL.
+    Adapted from KaramelliS/shortlink-bypass.
+    """
+    import base64 as _b64
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    )
+
+    try:
+        resp = await http.get(url, headers={"User-Agent": _UA}, timeout=_SHORT_TIMEOUT)
+        resp.raise_for_status()
+    except NetworkError as e:
+        raise DDLException(f"boost: {type(e).__name__}") from e
+
+    m = _re.search(r'kekw\s*=\s*["\']([^"\']+)["\']', resp.text)
+    if m:
+        try:
+            raw = m.group(1)
+            padding = 4 - len(raw) % 4
+            if padding != 4:
+                raw += "=" * padding
+            decoded = _b64.b64decode(raw).decode("utf-8", errors="replace")
+            # Extract URL from decoded content
+            url_m = _re.search(r'https?://[^\s"<>]+', decoded)
+            if url_m:
+                return url_m.group(0)
+            if decoded.startswith("http"):
+                return decoded.strip()
+        except Exception as e:
+            raise DDLException(f"boost: base64 decode failed — {e}") from e
+
+    raise DDLException("boost: kekw variable not found on page")
+
+
+async def shrinkme(url: str) -> str:
+    """
+    shrinkme.click / shrinkme.io shortener bypass — pure HTTP, no browser.
+
+    Uses the MrProBlogger direct shortcut discovered by IndraYuda13/shortlink-bypass-bot:
+      1. Extract the alias from the shrinkme URL
+      2. GET https://en.mrproblogger.com/<alias> with Referer: https://themezon.net/
+         → returns the countdown page with form#go-link
+      3. Wait for the timer (counter_value from app_vars, default 12s)
+      4. POST /links/go with hidden form fields
+         → JSON {"status": "success", "url": "<destination>"}
+
+    No Turnstile, no browser required.
+    """
+    import asyncio as _asyncio
+
+    _MRPRO = "https://en.mrproblogger.com"
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    alias = url.rstrip("/").split("/")[-1]
+    if not alias:
+        raise DDLException("shrinkme: could not extract alias from URL")
+
+    mrpro_url = f"{_MRPRO}/{alias}"
+
+    def _run_sync() -> str:
+        import time as _time
+        from curl_cffi.requests import Session as _CurlSess
+
+        with _CurlSess(impersonate="chrome136") as sess:
+            page = sess.get(
+                mrpro_url,
+                headers={"User-Agent": _UA, "Referer": "https://themezon.net/"},
+                allow_redirects=True,
+                timeout=30,
+            )
+
+        if page.status_code == 404:
+            raise DDLException(f"shrinkme: alias '{alias}' not found on mrproblogger")
+
+        html = page.text
+        soup = BeautifulSoup(html, "html.parser")
+        form = soup.select_one("form#go-link")
+        if not form:
+            raise DDLException("shrinkme: go-link form not found — site may have changed")
+
+        hidden = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = form.get("action") or "/links/go"
+        if not action.startswith("http"):
+            action = f"{_MRPRO}{action}"
+
+        # Extract timer — use counter_value - 1 as minimum wait
+        # Server enforces server-side timestamp: counter_value=12 works at 11s
+        counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 12
+        _time.sleep(max(11, counter - 1))
+
+        with _CurlSess(impersonate="chrome136") as sess2:
+            r2 = sess2.post(
+                action,
+                data=hidden,
+                headers={
+                    "User-Agent": _UA,
+                    "Referer": str(page.url),
+                    "Origin": _MRPRO,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                },
+                timeout=30,
+            )
+
+        try:
+            data = _json.loads(r2.content)
+        except Exception:
+            raise DDLException(f"shrinkme: invalid JSON response")
+
+        dest = data.get("url")
+        if not dest:
+            msg = data.get("message", "no URL in response")
+            raise DDLException(f"shrinkme: {msg}")
+
+        return dest
+
+    import asyncio as _asyncio
+    try:
+        return await _asyncio.to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"shrinkme: {type(e).__name__} — {e}") from e
