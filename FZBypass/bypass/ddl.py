@@ -1756,6 +1756,33 @@ async def shrinkme(url: str) -> str:
         page = sess.get(
             mrpro_url,
             headers={"User-Agent": _UA, "Referer": "https://themezon.net/"},
+            allow_redirects=False,  # capture raw response for diagnosis
+            timeout=30,
+        )
+
+        # Log redirect chain for debugging
+        status = page.status_code
+        location = page.headers.get("location", "")
+        sent_cookies = ""
+        try:
+            sent_cookies = page.request.headers.get("cookie", "") or page.request.headers.get("Cookie", "")
+        except Exception:
+            pass
+
+        if status in (301, 302, 303, 307, 308):
+            raise DDLException(
+                f"shrinkme: mrproblogger redirected ({status}) -> {location[:60]} "
+                f"[sent_cookies={'yes' if sent_cookies else 'no'}:{sent_cookies[:40]}]"
+            )
+
+        # Follow manually if needed
+        if status != 200:
+            raise DDLException(f"shrinkme: mrproblogger returned {status}")
+
+        # Re-fetch with redirects for the actual page
+        page = sess.get(
+            mrpro_url,
+            headers={"User-Agent": _UA, "Referer": "https://themezon.net/"},
             allow_redirects=True,
             timeout=30,
         )
