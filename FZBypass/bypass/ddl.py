@@ -1707,12 +1707,26 @@ async def shrinkme(url: str) -> str:
 
         sess = _CurlSess(impersonate="chrome136")
 
-        # Step 1: seed ref<alias> cookie by visiting shrinkme.click
+        # Step 1: seed ref<alias> cookie by visiting shrinkme.click.
+        # If blocked (datacenter IP), set cookies directly on mrproblogger domain —
+        # mrproblogger only checks for the presence of ref<alias>, not its value.
+        seeded = False
         try:
             sess.get(shrinkme_url, headers={"User-Agent": _UA},
                      allow_redirects=True, timeout=15)
+            seeded = any(c.name == f"ref{alias}" for c in sess.cookies.jar)
         except Exception:
-            pass  # best-effort — proceed anyway
+            pass
+
+        if not seeded:
+            # Shrinkme.click blocked — inject cookies directly on mrproblogger
+            try:
+                sess.cookies.set(f"ref{alias}", "bypass",
+                                 domain="en.mrproblogger.com")
+                sess.cookies.set("app_visitor", "Q2FrZQ%3D%3D.bypass",
+                                 domain="en.mrproblogger.com")
+            except Exception:
+                pass
 
         # Step 2: hit mrproblogger with seeded session
         page = sess.get(
