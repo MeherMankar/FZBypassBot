@@ -55,6 +55,27 @@ class Config:
     GRABX_API_URL = conf("GRABX_API_URL").rstrip("/")
     GRABX_API_KEY = conf("GRABX_API_KEY")
     BYPASS_API_URL = conf("BYPASS_API_URL").rstrip("/")
+    # Comma-separated proxy URLs or host:port:user:pass entries
+    _proxy_raw = conf("PROXY_URL").strip()
+    PROXY_LIST: list[str] = [p.strip() for p in _proxy_raw.split(",") if p.strip()] if _proxy_raw else []
+
+    @classmethod
+    def next_proxy(cls) -> str | None:
+        """Return a random proxy URL from PROXY_LIST, or None if empty."""
+        if not cls.PROXY_LIST:
+            return None
+        import random as _random
+        raw = _random.choice(cls.PROXY_LIST)
+        # Support both http://user:pass@host:port and host:port:user:pass formats
+        if raw.startswith(("http://", "https://", "socks5://")):
+            return raw
+        parts = raw.split(":")
+        if len(parts) == 4:
+            host, port, user, pwd = parts
+            return f"http://{user}:{pwd}@{host}:{port}"
+        if len(parts) == 2:
+            return f"http://{raw}"
+        return raw
     _channels = conf("AUTH_CHANNELS")
     AUTH_CHANNELS = _channels.split() if isinstance(_channels, str) and _channels else []
 

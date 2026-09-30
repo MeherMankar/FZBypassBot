@@ -1705,7 +1705,10 @@ async def shrinkme(url: str) -> str:
         import time as _time
         from curl_cffi.requests import Session as _CurlSess
 
-        sess = _CurlSess(impersonate="chrome136")
+        proxy = Config.next_proxy()
+        sess = _CurlSess(impersonate="chrome136",
+                         proxies={"https": proxy, "http": proxy}
+                         if proxy else None)
 
         # Step 1: seed ref<alias> cookie by visiting shrinkme.click.
         # If blocked (datacenter IP), set cookies directly on mrproblogger domain —
