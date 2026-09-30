@@ -1720,13 +1720,37 @@ async def shrinkme(url: str) -> str:
 
         if not seeded:
             # Shrinkme.click blocked — inject cookies directly on mrproblogger
+            # Use http.cookiejar for cross-version compatibility
             try:
-                sess.cookies.set(f"ref{alias}", "bypass",
-                                 domain="en.mrproblogger.com")
-                sess.cookies.set("app_visitor", "Q2FrZQ%3D%3D.bypass",
-                                 domain="en.mrproblogger.com")
+                from http.cookiejar import Cookie as _Cookie
+                _ck = _Cookie(
+                    version=0, name=f"ref{alias}", value="bypass",
+                    port=None, port_specified=False,
+                    domain="en.mrproblogger.com", domain_specified=True,
+                    domain_initial_dot=False,
+                    path="/", path_specified=True, secure=False,
+                    expires=None, discard=True,
+                    comment=None, comment_url=None, rest={},
+                )
+                _ck2 = _Cookie(
+                    version=0, name="app_visitor", value="Q2FrZQ==.bypass",
+                    port=None, port_specified=False,
+                    domain="en.mrproblogger.com", domain_specified=True,
+                    domain_initial_dot=False,
+                    path="/", path_specified=True, secure=False,
+                    expires=None, discard=True,
+                    comment=None, comment_url=None, rest={},
+                )
+                sess.cookies.jar.set_cookie(_ck)
+                sess.cookies.jar.set_cookie(_ck2)
             except Exception:
-                pass
+                try:
+                    sess.cookies.set(f"ref{alias}", "bypass",
+                                     domain="en.mrproblogger.com")
+                    sess.cookies.set("app_visitor", "Q2FrZQ==.bypass",
+                                     domain="en.mrproblogger.com")
+                except Exception:
+                    pass
 
         # Step 2: hit mrproblogger with seeded session
         page = sess.get(
