@@ -273,6 +273,9 @@ async def toonworld4all(url: str) -> str:
             if current in visited:
                 raise DDLException(f"toonworld4all: redirect loop detected at {current}")
             visited.add(current)
+            # Check if we've landed on the new archive redirect page
+            if "archive.toonworld4all.me/redirect/" in current:
+                return await tw4all_redirect(current)
             # Check if we've landed on a known shortener
             if "rocklinks" in current:
                 return await transcript(
@@ -630,3 +633,64 @@ async def hblinks(url: str) -> list:
         raise DDLException("HBLinks: no download links found on page")
 
     return links
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ToonWorld4All archive redirect  (archive.toonworld4all.me/redirect/<hash>)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def tw4all_redirect(url: str) -> str:
+    """
+    Bypass archive.toonworld4all.me/redirect/<hash> — pure HTTP, no JS.
+
+    The page is server-side rendered (Vite/React SSR).  The server decrypts
+    the AES-CTR token and injects the result into the HTML as:
+
+        window.__PROPS__ = {"destination":"https://...","link":{...},"total":3}
+
+    We simply GET the page and extract `destination` from that JSON blob.
+    The `destination` is either the final DDL URL or a shortener link
+    (e.g. exe.io) that the bot will resolve further via LoopBypass.
+    """
+    import json as _json
+    import re as _re
+
+    try:
+        r = await http.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            },
+            follow_redirects=True,
+            timeout=_SHORT_TIMEOUT,
+        )
+    except NetworkError as e:
+        raise DDLException(f"tw4all_redirect: {type(e).__name__}") from e
+
+    if r.status_code != 200:
+        raise DDLException(f"tw4all_redirect: HTTP {r.status_code}")
+
+    # If the server redirected us away from archive.toonworld4all.me,
+    # that redirect target IS the destination (server served it directly)
+    if "archive.toonworld4all.me" not in str(r.url):
+        return str(r.url)
+
+    m = _re.search(r'window\.__PROPS__\s*=\s*(\{.+?\})\s*;', r.text, _re.S)
+    if not m:
+        raise DDLException("tw4all_redirect: window.__PROPS__ not found in page")
+
+    try:
+        props = _json.loads(m.group(1))
+    except Exception:
+        raise DDLException("tw4all_redirect: failed to parse __PROPS__ JSON")
+
+    destination = props.get("destination")
+    if not destination:
+        raise DDLException("tw4all_redirect: no destination in __PROPS__")
+
+    return destination

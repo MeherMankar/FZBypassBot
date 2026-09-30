@@ -86,14 +86,14 @@ async def direct_link_checker(link, onlylink=False):
         blink = await try2link(link)
     elif bool(match(r"https?:\/\/(gyanilinks|gtlinks)\.\S+", link)):
         blink = await gyanilinks(link)
+    elif bool(match(r"https?:\/\/earnlinks\.\S+", link)):
+        blink = await earnlinks(link)
     elif bool(match(r"https?:\/\/(aylink\.co|ay\.live)\S+", link)):
         blink = await aylink(link)
     elif bool(match(r"https?:\/\/(cpmlink\.(co|pro)|cpm\.link)\S+", link)):
         blink = await cpmlink(link)
     elif bool(match(r"https?:\/\/(boost\.ink|mboost\.me|bst\.gg|booo\.st)\S+", link)):
         blink = await boost(link)
-    elif bool(match(r"https?:\/\/(shrinkme\.click|shrinkme\.io)\S+", link)):
-        blink = await shrinkme(link)
     elif bool(match(r"https?:\/\/(shrinkme\.click|shrinkme\.io)\S+", link)):
         blink = await shrinkme(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
@@ -132,6 +132,8 @@ async def direct_link_checker(link, onlylink=False):
         return await fichier(link)
 
     # DL Sites
+    elif bool(match(r"https?:\/\/(www\.)?dotflix\.store\/share\S+", link)):
+        return await dotflix(link)
     elif bool(match(r"https?:\/\/(www\.)?hblinks\.lol\S+", link)):
         return await hblinks(link)
     elif bool(match(r"https?:\/\/cinevood\.\S+", link)):
@@ -149,6 +151,8 @@ async def direct_link_checker(link, onlylink=False):
         return await kayoanime(link)
     elif bool(match(r"https?:\/\/toonworld4all\.\S+", link)):
         return await toonworld4all(link)
+    elif bool(match(r"https?:\/\/archive\.toonworld4all\.\S+\/redirect\/\S+", link)):
+        return await tw4all_redirect(link)
     elif bool(match(r"https?:\/\/skymovieshd\.\S+", link)):
         return await skymovieshd(link)
     elif bool(match(r"https?:\/\/.+\.sharespark\.\S+", link)):

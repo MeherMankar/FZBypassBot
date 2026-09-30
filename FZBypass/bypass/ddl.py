@@ -1856,3 +1856,205 @@ async def shrinkme(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"shrinkme: {type(e).__name__} — {e}") from e
+
+
+async def earnlinks(url: str) -> str:
+    """
+    earnlinks.in shortener bypass — pure HTTP, no browser.
+
+    Referer: https://itiexamshala.com/ makes the server
+    serve the go-link form directly, bypassing the ad/timer gate entirely.
+    An 8s server-side timer is still enforced (Bad Request if submitted earlier).
+
+    Flow:
+      1. GET earnlinks.in/<code> with Referer: https://itiexamshala.com/
+         → server returns go-link form directly (no redirect to ad site)
+      2. Wait 8s (minimum server-side timer)
+      3. POST /links/go → JSON {"status": "success", "url": "<destination>"}
+    """
+    _UA = (
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    )
+    _REFERER = "https://itiexamshala.com/"
+
+    def _run_sync() -> str:
+        import time as _time
+        from curl_cffi.requests import Session as _CurlSess
+
+        sess = _CurlSess(impersonate="chrome120")
+        page = sess.get(
+            url,
+            headers={"User-Agent": _UA, "Referer": _REFERER},
+            allow_redirects=True,
+            timeout=20,
+        )
+
+        if page.status_code != 200 or "earnlinks.in" not in str(page.url):
+            raise DDLException(f"earnlinks: unexpected response {page.status_code}")
+
+        html = page.text
+        soup = BeautifulSoup(html, "html.parser")
+        form = soup.find(id="go-link")
+        if not form:
+            raise DDLException("earnlinks: go-link form not found — Referer trick may have changed")
+
+        hidden = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = form.get("action") or "/links/go"
+        if not action.startswith("http"):
+            action = f"https://earnlinks.in{action}"
+
+        # Respect server-side counter; skip wait if counter_value is 0
+        counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 8
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        r2 = sess.post(
+            action,
+            data=hidden,
+            headers={
+                "User-Agent": _UA,
+                "Referer": str(page.url),
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, */*",
+            },
+            timeout=20,
+        )
+
+        try:
+            data = _json.loads(r2.content)
+        except Exception:
+            raise DDLException("earnlinks: invalid JSON response")
+
+        dest = data.get("url")
+        if not dest:
+            raise DDLException(f"earnlinks: {data.get('message', 'no URL in response')}")
+
+        return dest
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"earnlinks: {type(e).__name__} — {e}") from e
+
+
+async def dotflix(url: str) -> str:
+    """
+    dotflix.store share-page bypass — pure HTTP, no browser.
+
+    The page is a Next.js App Router app that embeds all file data in
+    self.__next_f.push([1,"..."]) script calls in the initial HTML.
+    The JSON string contains initialCloudflareData (Cloudflare R2 URL)
+    and initialShareData (vikingfileLink, pixeldrainLink, filename, size).
+
+    Flow:
+      1. GET dotflix.store/share/<code>
+      2. Extract all push([1,"..."]) payloads, unescape, concatenate
+      3. Parse the JSON blob → extract every non-null download URL
+      4. Return formatted message with file info + download links
+    """
+    def _run_sync() -> str:
+        import httpx as _httpx
+
+        r = _httpx.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
+            follow_redirects=True,
+            timeout=20.0,
+        )
+        if r.status_code != 200:
+            raise DDLException(f"dotflix: HTTP {r.status_code}")
+        html = r.text
+
+        # Collect all self.__next_f.push([1,"..."]) payloads
+        rsc_payloads = _re.findall(
+            r'self\.__next_f\.push\(\[1,"(.+?)"\]\)', html, _re.S
+        )
+        if not rsc_payloads:
+            raise DDLException("dotflix: RSC payload not found in page")
+
+        # Unescape each payload (they are JSON string values) and join
+        full_rsc = ""
+        for raw in rsc_payloads:
+            full_rsc += raw.replace('\\"', '"').replace('\\\\', '\\').replace('\\n', '\n').replace('\\/', '/') + "\n"
+
+        # ── Extract initialShareData ──────────────────────────────────────────
+        sd_m = _re.search(r'"initialShareData"\s*:\s*(\{[^{}]+\})', full_rsc)
+        share_data: dict = {}
+        if sd_m:
+            try:
+                share_data = _json.loads(sd_m.group(1))
+            except Exception:
+                pass
+
+        # ── Extract initialCloudflareData ────────────────────────────────────
+        cf_m = _re.search(r'"initialCloudflareData"\s*:\s*(\{[^{}]+\})', full_rsc)
+        cf_data: dict = {}
+        if cf_m:
+            try:
+                cf_data = _json.loads(cf_m.group(1))
+            except Exception:
+                pass
+
+        if not share_data and not cf_data:
+            raise DDLException("dotflix: could not parse file data from RSC payload")
+
+        filename = share_data.get("filename") or "Unknown"
+        size = share_data.get("formattedFileSize") or "Unknown"
+
+        # ── Collect all available download links ─────────────────────────────
+        links: list[tuple[str, str]] = []
+
+        cf_url = cf_data.get("cloudflareFileUrl")
+        cf_locked = cf_data.get("isCloudflareLocked", True)
+        if cf_url and not cf_locked:
+            links.append(("Cloudflare CDN", cf_url))
+
+        pd_url = share_data.get("pixeldrainLink")
+        if pd_url:
+            links.append(("Pixeldrain", pd_url))
+
+        vf_url = share_data.get("vikingfileLink")
+        if vf_url:
+            links.append(("VikingFile", vf_url))
+
+        dp_url = share_data.get("dotplayLink")
+        if dp_url:
+            links.append(("DotPlay", dp_url))
+
+        if not links:
+            raise DDLException("dotflix: no download links found in share data")
+
+        lines = [
+            f"▸ <b>Title</b> (<a href=\"{url}\">{url}</a>) ➙ <code>{filename}</code>",
+            "",
+            f"▸ <b>Size</b> ➙ <code>{size}</code>",
+            "",
+            "▸ <b>Download Links</b> ➙",
+            "",
+        ]
+        for label, link in links:
+            lines.append(f"    • <a href=\"{link}\">{label}</a>")
+        return "\n".join(lines)
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"dotflix: {type(e).__name__} — {e}") from e
