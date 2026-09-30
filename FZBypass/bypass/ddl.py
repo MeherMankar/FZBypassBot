@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json as _json
 import re as _re
-from asyncio import sleep as asleep
+from asyncio import sleep as asleep, to_thread as _to_thread
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -1776,7 +1776,7 @@ async def shrinkme(url: str) -> str:
         return dest
 
     try:
-        return await asyncio.to_thread(_run_sync)
+        return await _to_thread(_run_sync)
     except DDLException:
         raise
     except Exception as e:

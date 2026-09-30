@@ -486,12 +486,18 @@ async def hubcloud(url: str) -> str:
             return "FSLv2 Server"
         if "r2.cloudflarestorage.com" in host:
             return "FSL Server"
-        if "storage.googleapis.com" in host:
-            return "ZipDisk Server"
+        if "storage.googleapis.com" in host or "googleusercontent.com" in host:
+            return "10Gbps Server"
         if "pixeldrain" in host:
             return "Pixeldrain"
         if "fuckingfast.net" in host:
             return "Buzz Server"
+        if "gpdl" in host:
+            return "Gpdl Server"
+        if "hbplay" in host:
+            return "Hbplay Server"
+        if "instant.busycdn" in host:
+            return "Instant DL"
         return host.replace("www.", "").split(".")[0].capitalize() + " Server"
 
     seen: set[str] = set()
@@ -515,13 +521,15 @@ async def hubcloud(url: str) -> str:
         raise DDLException("HubCloud: no download links found")
 
     lines = [
-        f"┏<b>Name:</b> <code>{filename}</code>",
-        f"┠<b>Size:</b> <code>{size_text}</code>",
-        f"┠<b>HubCloud:</b> <a href=\"{url}\">Source</a>",
+        f"▸ <b>Title</b> (<a href=\"{url}\">{url}</a>) ➙ <code>{filename}</code>",
+        f"",
+        f"▸ <b>Size</b> ➙ <code>{size_text}</code>",
+        f"",
+        f"▸ <b>Download Links</b> ➙",
+        f"",
     ]
-    for i, (label, link) in enumerate(links):
-        prefix = "┗" if i == len(links) - 1 else "┠"
-        lines.append(f"{prefix}<b>{label}:</b> <a href=\"{link}\">Click Here</a>")
+    for label, link in links:
+        lines.append(f"    • <a href=\"{link}\">{label}</a>")
     return "\n".join(lines)
 
 
