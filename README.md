@@ -160,14 +160,6 @@ Set `TERA_COOKIE` to your Terabox `ndus` cookie value.
 
 ---
 
-## ***vplink Setup***
-
-vplink.in now bypasses using pure HTTP — no external API needed. The `gt_uc_` cookie + `darkguruji.com` Referer trick makes the server serve the unlock form directly.
-
-The old `BYPASS_API_URL` (link-bypass-api) still works as a fallback if the pure-HTTP method fails.
-
----
-
 ## ***Deploy***
 
 ### Render / Koyeb / Heroku
