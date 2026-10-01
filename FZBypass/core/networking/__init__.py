@@ -19,6 +19,7 @@ Public API
 """
 from FZBypass.core.networking.client import http, AsyncHTTPClient
 from FZBypass.core.networking.cfscrape_adapter import cf, CloudflareClient
+from FZBypass.core.networking.turnstile_adapter import ts, TurnstileClient
 from FZBypass.core.networking.exceptions import (
     NetworkError,
     NetworkTimeout,
@@ -35,9 +36,11 @@ __all__ = [
     # singletons
     "http",
     "cf",
+    "ts",
     # classes
     "AsyncHTTPClient",
     "CloudflareClient",
+    "TurnstileClient",
     "HTTPResponse",
     # exceptions
     "NetworkError",

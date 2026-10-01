@@ -55,6 +55,7 @@ class Config:
     GRABX_API_URL = conf("GRABX_API_URL").rstrip("/")
     GRABX_API_KEY = conf("GRABX_API_KEY")
     BYPASS_API_URL = conf("BYPASS_API_URL").rstrip("/")
+    PEAK_API_KEY = conf("PEAK_API_KEY")  # Peak.fo API key for Turnstile solving
     # Comma-separated proxy URLs or host:port:user:pass entries
     _proxy_raw = conf("PROXY_URL").strip()
     PROXY_LIST: list[str] = [p.strip() for p in _proxy_raw.split(",") if p.strip()] if _proxy_raw else []

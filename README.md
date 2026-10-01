@@ -23,6 +23,7 @@
 - Inline Bypass (use anywhere — enable via BotFather → Inline Mode)
 - **Channel Auto-Bypass** — bot edits channel posts in-place, replacing links silently
 - **PROXY_URL** — residential proxy rotation for sites that block datacenter IPs
+- **PEAK_API_KEY** — pure-HTTP Turnstile solving via Peak.fo for srnky.com / clksz.com / oii.la (proxy optional)
 - Keep-alive ping every 10 min (prevents Render free tier sleep)
 - Corrupt session auto-cleanup on startup
 
@@ -30,7 +31,7 @@
 
 ## ***Supported Sites***
 
-> Last Updated: **30-09-2026**
+> Last Updated: **01-10-2026**
 
 <details>
 <summary><b>Shortener Sites</b> — click to expand</summary>
@@ -58,6 +59,7 @@
 | `shareus.io` · `shrs.link` | ✅ | Untested |
 | `shrdsk.me` | ✅ | Untested |
 | `shrinkme.click` · `shrinkme.io` | ✅ | 30-09-2026 |
+| `srnky.com` · `clksz.com` · `oii.la` | ✅ | 01-10-2026 |
 | `surl.li` | ✅ | Untested |
 | `thinfi.com` | ✅ | Untested |
 | `try2link.com` | ✅ | Untested |
@@ -140,6 +142,22 @@ Proxies are rotated randomly per request.
 
 ---
 
+## ***Peak Setup (Turnstile Shorteners)***
+
+`srnky.com`, `clksz.com`, and `oii.la` (shrinkearn.com / adLinkFly platform) gate every link behind a Cloudflare Turnstile widget. Bypassing is done entirely via pure HTTP — no browser required. You need:
+
+1. A **Peak.fo API key** — set `PEAK_API_KEY`. Get one free (1,000 solves) at [peak.fo](https://peak.fo).
+2. (Optional) A **residential proxy** — set `PROXY_URL`. Helps if your server IP is flagged by Turnstile or advertisingcamps.com. The proxy is passed to Peak so the solved token is tied to the same IP as subsequent requests.
+
+```
+PEAK_API_KEY=pk_your_key_here
+PROXY_URL=host:port:user:pass   # optional but recommended on shared hosting
+```
+
+Without `PEAK_API_KEY` set, the bot raises a clear error rather than silently failing.
+
+---
+
 ## ***Terabox Setup***
 
 Terabox links are resolved in order: **grabx-api → terabox-downloader-api → TERA_COOKIE**
@@ -198,6 +216,7 @@ Copy `sample_config.env` → `config.env` and fill in:
 | `TERABOX_API_URL` | ➖ | terabox-downloader-api URL (fallback) |
 | `TERA_COOKIE` | ➖ | Terabox `ndus` cookie (last resort) |
 | `BYPASS_API_URL` | ➖ | link-bypass-api URL (vplink fallback) |
+| `PEAK_API_KEY` | ➖ | Peak.fo key for Turnstile shorteners — [Setup ↗](#peak-setup-turnstile-shorteners) |
 | `PROXY_URL` | ➖ | Comma-separated residential proxies — [Setup ↗](#proxy-setup) |
 | `GDTOT_CRYPT` | ➖ | GdToT cookie |
 | `KATDRIVE_CRYPT` | ➖ | KatDrive cookie |
@@ -216,5 +235,5 @@ Copy `sample_config.env` → `config.env` and fill in:
 - `MeherMankar` — maintainer & contributor
 - `SilentDemonSD` — original developer (Base repo)
 - `bipinkrish/Link-Bypasser-Bot` — many scripts adapted and modified
-- `IndraYuda13/shortlink-bypass-bot` — shrinkme MrProBlogger chain discovery
+- `IndraYuda13/shortlink-bypass-bot` — shrinkme MrProBlogger chain discovery + lnbz.la article-chain flow reference (loanbixby callback mechanism)
 - `KaramelliS/shortlink-bypass` — aylink/cpmlink token flow reference

@@ -2058,3 +2058,240 @@ async def dotflix(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"dotflix: {type(e).__name__} — {e}") from e
+
+
+async def srnky(url: str) -> str:
+    """
+    srnky.com / clksz.com / oii.la — pure-HTTP bypass (no browser required).
+
+    Platform: shrinkearn.com / adLinkFly (cloud_theme 6.6.4).
+    Requires: PEAK_API_KEY (Peak.fo, for Turnstile solving) + PROXY_URL.
+
+    ── Confirmed flow (discovered via CDP spy on real Chrome session) ─────────
+
+    1. GET srnky/<alias>
+       → Sets refXXX session cookie; page has advertisingcamps form with
+         token, c_d, c_t, alias. Turnstile sitekey: 0x4AAAAAABpMIvjgfpDTfgEj.
+
+    2. Solve Turnstile via Peak API → cf-turnstile-response token.
+
+    3. POST advertisingcamps.com/taboola1/landing/ with form fields + token
+       → Returns JS redirect to loanbixby.com/<article>?get=<alias>&...
+
+    4. POST loanbixby.com/<article>/ with token+c_d+c_t+alias+url
+       → loanbixby's WordPress shortlink plugin registers the ad visit.
+
+    5. POST srnky.com/<alias> with token+c_d+c_t+alias+url (no https in url)
+       using Referer: loanbixby.com, Origin: loanbixby.com
+       → Response is the alias page with a HIDDEN go-link form pre-populated:
+             <form id="go-link" action="/links/go">
+               <input name="_method" value="POST">
+               <input name="ad_form_data" value="<server-signed-blob>">
+
+    6. Wait counter_value seconds (server-side timer check).
+
+    7. POST /links/go with _method=POST + ad_form_data
+       → {"status":"success","url":"<destination>"}
+    """
+    import re as _re2
+    import time as _time
+    import requests as _requests
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    )
+    _SITEKEY = "0x4AAAAAABpMIvjgfpDTfgEj"
+
+    if not Config.PEAK_API_KEY:
+        raise DDLException(
+            "srnky/clksz/oii.la: PEAK_API_KEY is required (Peak.fo Turnstile solver). "
+            "Set it in config.env."
+        )
+
+    def _find_input(html: str, name: str) -> str | None:
+        for pat in [
+            rf'name=["\x27]{_re2.escape(name)}["\x27]\s+[^>]*value=["\x27]([^"\x27]*)["\x27]',
+            rf'value=["\x27]([^"\x27]*)["\x27][^>]*\s+name=["\x27]{_re2.escape(name)}["\x27]',
+        ]:
+            m = _re2.search(pat, html)
+            if m:
+                return m.group(1)
+        return None
+
+    def _run_sync() -> str:
+        sess = _requests.Session()
+        sess.headers.update({"User-Agent": _UA})
+
+        # ── Step 1: GET alias page ────────────────────────────────────────────
+        r1 = sess.get(url, timeout=20)
+        html = r1.text
+
+        alias_m = _re2.search(r'/([A-Za-z0-9]+)\s*$', url.rstrip('/'))
+        alias = alias_m.group(1) if alias_m else url.split('/')[-1]
+
+        token = _find_input(html, 'token')
+        c_d   = _find_input(html, 'c_d')
+        c_t   = _find_input(html, 'c_t')
+        ad_type = _find_input(html, 'ad_type') or '2'
+        mysite  = _find_input(html, 'mysite') or 'shrinkearn.com'
+
+        counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 15
+
+        if not token:
+            raise DDLException(f"srnky: could not extract token from {url}")
+
+        # ── Step 2: Solve Turnstile via Peak API ──────────────────────────────
+        proxy = Config.next_proxy()
+        peak_payload: dict = {
+            "task_type": "turnstiletask",
+            "url": url,
+            "sitekey": _SITEKEY,
+        }
+        if proxy:
+            peak_payload["proxy"] = proxy
+
+        peak_r = _requests.post(
+            "https://api.peak.fo/solve",
+            headers={"X-API-Key": Config.PEAK_API_KEY},
+            json=peak_payload,
+            timeout=60,
+        )
+        peak_resp = peak_r.json()
+        if not peak_resp.get("success"):
+            raise DDLException(
+                f"srnky: Turnstile solve failed — {peak_resp.get('error', peak_resp)}"
+            )
+        ts_token = peak_resp["data"]["token"]
+
+        # ── Step 3: POST to advertisingcamps ──────────────────────────────────
+        ac_r = sess.post(
+            "https://advertisingcamps.com/taboola1/landing/",
+            data={
+                "url": url,
+                "token": token,
+                "mysite": mysite,
+                "c_d": c_d,
+                "c_t": c_t,
+                "ad_type": ad_type,
+                "visit_token": "",
+                "alias": alias,
+                "submit": "",
+                "cf-turnstile-response": ts_token,
+            },
+            headers={"Origin": "https://srnky.com", "Referer": url},
+            timeout=20,
+            allow_redirects=False,
+        )
+        lb_m = _re2.search(
+            r'location\.href=["\x27](https://loanbixby\.com/[^""\x27]+)["\x27]',
+            ac_r.text,
+        )
+        if not lb_m:
+            raise DDLException(
+                f"srnky: advertisingcamps did not return loanbixby URL "
+                f"(Turnstile may have failed) — {ac_r.text[:200]}"
+            )
+        lb_url = lb_m.group(1)
+
+        # Parse loanbixby URL params (get, date, time, token)
+        lb_base = lb_url.split("?")[0]
+        lb_qs = lb_url.split("?")[1] if "?" in lb_url else ""
+        lb_params: dict[str, str] = {}
+        for pair in lb_qs.split("&"):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                from urllib.parse import unquote_plus
+                lb_params[k] = unquote_plus(v)
+
+        lb_token = lb_params.get("token", token)
+        lb_date  = lb_params.get("date", c_d)
+        lb_time  = lb_params.get("time", c_t)
+        lb_alias = lb_params.get("get", alias)
+
+        # ── Step 4: POST to loanbixby (register ad visit) ─────────────────────
+        sess.post(
+            lb_base,
+            data={
+                "token": lb_token,
+                "c_d": lb_date,
+                "c_t": lb_time,
+                "alias": lb_alias,
+                "next_page": lb_base,
+                "url": f"srnky.com/{lb_alias}",
+            },
+            headers={"Origin": "https://loanbixby.com", "Referer": lb_base},
+            timeout=20,
+            allow_redirects=False,
+        )
+
+        # ── Step 5: POST to srnky (get go-link form with ad_form_data) ────────
+        srnky_cb = sess.post(
+            url,
+            data={
+                "token": lb_token,
+                "c_d": lb_date,
+                "c_t": lb_time,
+                "alias": lb_alias,
+                "url": f"srnky.com/{lb_alias}",
+            },
+            headers={
+                "Origin": "https://loanbixby.com",
+                "Referer": lb_base,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            timeout=20,
+            allow_redirects=True,
+        )
+
+        afd_m = _re2.search(
+            r'name=["\x27]ad_form_data["\x27]\s+value=["\x27]([^"\x27]+)["\x27]',
+            srnky_cb.text,
+        )
+        if not afd_m:
+            afd_m = _re2.search(
+                r'value=["\x27]([^"\x27]+)["\x27][^>]*name=["\x27]ad_form_data["\x27]',
+                srnky_cb.text,
+            )
+        if not afd_m:
+            raise DDLException(
+                "srnky: go-link form with ad_form_data not found in callback response — "
+                "ad visit may not have registered correctly"
+            )
+        ad_form_data = afd_m.group(1)
+
+        # ── Step 6: Wait counter ──────────────────────────────────────────────
+        _time.sleep(counter + 1)
+
+        # ── Step 7: POST /links/go ────────────────────────────────────────────
+        base_url = url.split("/")[0] + "//" + url.split("/")[2]  # https://srnky.com
+        go_r = sess.post(
+            f"{base_url}/links/go",
+            data={"_method": "POST", "ad_form_data": ad_form_data},
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Origin": base_url,
+                "Referer": url,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            },
+            timeout=20,
+        )
+        try:
+            result = go_r.json()
+        except Exception:
+            raise DDLException(f"srnky: /links/go non-JSON response — {go_r.text[:200]}")
+
+        if result.get("status") == "success" and result.get("url"):
+            return result["url"]
+        raise DDLException(
+            f"srnky: /links/go failed — {result.get('message', result)}"
+        )
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"srnky: {type(e).__name__} — {e}") from e
