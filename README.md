@@ -221,8 +221,8 @@ Copy `sample_config.env` → `config.env` and fill in:
 ---
 
 ## ***Credits***
-- `SilentDemonSD` — original developer
 - `MeherMankar` — maintainer & contributor
+- `SilentDemonSD` — original developer (Base repo)
 - `bipinkrish/Link-Bypasser-Bot` — many scripts adapted and modified
 - `IndraYuda13/shortlink-bypass-bot` — shrinkme MrProBlogger chain discovery
 - `KaramelliS/shortlink-bypass` — aylink/cpmlink token flow reference
