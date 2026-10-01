@@ -78,9 +78,9 @@
 | `mediafire.com` | ✅ | Untested |
 | `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | ✅ | Untested |
 | `pixeldrain.com` | ✅ | Untested |
-| `pornhub.com` | ✅ | Untested |
+| `pornhub.com` | ✅ | 27-09-2026 |
 | `streamtape.com` | ✅ | Untested |
-| `terabox.*` (many domains) | ✅ | Untested |
+| `terabox.*` (many domains) | ✅ | 27-09-2026 |
 | `we.tl` · `wetransfer.com` | ✅ | Untested |
 | `disk.yandex.ru` | ✅ | Untested |
 
@@ -91,12 +91,12 @@
 
 | Site | Status | Last Tested |
 |:-----|:------:|:------------|
-| `4khdhub.one` | ✅ | Untested |
+| `4khdhub.one` | ✅ | 27-09-2026 |
 | `cinevood.*` | ✅ | Untested |
 | `archive.toonworld4all.me` | ✅ | 30-09-2026 |
 | `dotflix.store` | ✅ | 30-09-2026 |
-| `hblinks.lol` | ✅ | Untested |
-| `hdhub4u.*` | ✅ | Untested |
+| `hblinks.lol` | ✅ | 27-09-2026 |
+| `hdhub4u.*` | ✅ | 27-09-2026 |
 | `kayoanime.com` | ✅ | Untested |
 | `skymovieshd.*` | ✅ | Untested |
 | `toonworld4all.*` | ✅ | Untested |
@@ -110,13 +110,13 @@
 
 | Site | Status | Last Tested |
 |:-----|:------:|:------------|
-| `appdrive.*` · `filebee.*` | ✅ | Untested |
-| `drivefire.co` | ✅ | Untested |
-| `gdflix.*` | ✅ | Untested |
+| `appdrive.*` · `filebee.*` | ✅ | 27-09-2026 |
+| `drivefire.co` | ✅ | 27-09-2026 |
+| `gdflix.*` | ✅ | 27-09-2026 |
 | `gdtot.cfd` | ✅ | Untested |
 | `filepress.store` · `pressbee.xyz` | ✅ | Untested |
 | `hubcloud.*` | ✅ | 30-09-2026 |
-| `hubdrive.*` | ✅ | Untested |
+| `hubdrive.*` | ✅ | 27-09-2026 |
 | `katdrive.org` | ✅ | Untested |
 | `sharer.pw` | ✅ | Untested |
 
