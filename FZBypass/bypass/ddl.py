@@ -444,7 +444,7 @@ async def gyanilinks(url: str) -> str:
 async def ouo(url: str) -> str:
     """
     Uses curl_cffi — ouo.press requires Chrome TLS fingerprint; neither
-    httpx nor cfscrape replicates it.  Kept as-is on purpose.
+    httpx nor cfscrape replicates it.  Uses chrome136 impersonation.
     """
     from re import compile as _compile
     tempurl = url.replace("ouo.io", "ouo.press")
@@ -460,7 +460,7 @@ async def ouo(url: str) -> str:
             "upgrade-insecure-requests": "1",
         }
     )
-    res = client.get(tempurl, impersonate="chrome110", timeout=30)
+    res = client.get(tempurl, impersonate="chrome136", timeout=30)
     next_url = f"{p.scheme}://{p.hostname}/go/{oid}"
 
     for _ in range(2):
@@ -475,7 +475,7 @@ async def ouo(url: str) -> str:
             data=data,
             headers={"content-type": "application/x-www-form-urlencoded"},
             allow_redirects=False,
-            impersonate="chrome110",
+            impersonate="chrome136",
             timeout=30,
         )
         next_url = f"{p.scheme}://{p.hostname}/xreallcygo/{oid}"
