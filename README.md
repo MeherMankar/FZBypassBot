@@ -9,7 +9,7 @@
 
 <i>A **Fast, Async, Multi-Threaded Bypass Telegram Bot** for mass-bypassing shorteners and extracting direct download links.</i>
 
-[**Demo Bot**](https://t.me/FZBypassBot) | [**Supported Sites**](#supported-sites) | [**Support Group**](https://t.me/FXTorrentz)
+[**Demo Bot**](https://t.me/teradownr0bot) | [**Supported Sites**](#supported-sites) | [**Support**](https://t.me/meherpatil)
 
 </div>
 
