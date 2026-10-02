@@ -444,12 +444,17 @@ async def gyanilinks(url: str) -> str:
 async def ouo(url: str) -> str:
     """
     Uses curl_cffi — ouo.press requires Chrome TLS fingerprint; neither
-    httpx nor cfscrape replicates it.  Uses chrome136 impersonation.
+    httpx nor cfscrape replicates it.  Uses chrome136 impersonation + proxy
+    to bypass Cloudflare's datacenter IP block on Render/cloud hosts.
     """
     from re import compile as _compile
     tempurl = url.replace("ouo.io", "ouo.press")
     p = urlparse(tempurl)
     oid = tempurl.split("/")[-1]
+
+    proxy = Config.next_proxy()
+    proxies = {"https": proxy, "http": proxy} if proxy else None
+
     client = cSession(
         headers={
             "authority": "ouo.press",
@@ -458,7 +463,8 @@ async def ouo(url: str) -> str:
             "cache-control": "max-age=0",
             "referer": "http://www.google.com/ig/adde?moduleurl=",
             "upgrade-insecure-requests": "1",
-        }
+        },
+        proxies=proxies,
     )
     res = client.get(tempurl, impersonate="chrome136", timeout=30)
     next_url = f"{p.scheme}://{p.hostname}/go/{oid}"
@@ -470,7 +476,7 @@ async def ouo(url: str) -> str:
         if not bs4.form:
             raise DDLException(
                 f"ouo: page blocked (no form) — status {res.status_code}. "
-                "ouo.press may be behind Cloudflare; try again later."
+                "ouo.press is Cloudflare-protected; ensure PROXY_URL is set."
             )
         inputs = bs4.form.findAll("input", {"name": _compile(r"token$")})
         data = {inp.get("name"): inp.get("value") for inp in inputs}
