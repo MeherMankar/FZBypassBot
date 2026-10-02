@@ -467,6 +467,11 @@ async def ouo(url: str) -> str:
         if res.headers.get("Location"):
             break
         bs4 = BeautifulSoup(res.content, "lxml")
+        if not bs4.form:
+            raise DDLException(
+                f"ouo: page blocked (no form) — status {res.status_code}. "
+                "ouo.press may be behind Cloudflare; try again later."
+            )
         inputs = bs4.form.findAll("input", {"name": _compile(r"token$")})
         data = {inp.get("name"): inp.get("value") for inp in inputs}
         data["x-token"] = await recaptchaV3()
