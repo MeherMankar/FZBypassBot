@@ -1,4 +1,4 @@
-"""
+﻿"""
 Bypass resolver functions — shortener / direct-link extraction.
 
 HTTP architecture
@@ -871,47 +871,157 @@ async def thinfi(url: str) -> str:
 
 async def vplink(url: str) -> str:
     """
-    vplink.in bypass via link-bypass-api (Puppeteer/Chromium microservice).
+    vplink.in / vplinks.in — pure-HTTP bypass via techmint/onlinewish learn_more.php chain.
 
-    Requires BYPASS_API_URL to be configured.
-    Deploy your own instance: https://github.com/MeherMankar/link-bypass-api
+    Confirmed flow (Oct 2026, discovered via CDP spy + HTTP tracing):
 
-    POST {BYPASS_API_URL}/bypass  {"url": "<vplink_url>"}
-    → {"status": "ok", "result": "<destination_url>"}
+    1. GET vplink.in/<code>
+       → Sets ref<code>, gt_uc_, AppSession cookies on vplink.in
+       → Returns page with <a href="techmint.in/studyinsurances/studyeducations/
+         ?insurancesstudy=<code>&uiso=...">
+
+    2. GET techmint landing (?insurancesstudy=)
+       → Sets PHPSESSID, user_eiop cookies on techmint.in
+       → JS redirect to random techmint article
+
+    3. GET article (to register the session)
+
+    4. Repeat: GET <domain>/<path>/learn_more.php with Referer=<current article>
+       → Returns HTML with document.location.href = '<next URL>'
+       → Follow to next article/landing page
+       Chain: techmint article → techmint landing2 → onlinewish landing
+              → onlinewish landing2 → vplink.in/<code> (final)
+
+    5. Final vplink.in/<code> URL has go-link form with ad_form_data
+       (counter_value=8, same adLinkFly platform as earnlinks)
+
+    6. Wait 8s → POST /links/go → destination
     """
-    api_base = Config.BYPASS_API_URL
-    if not api_base:
-        raise DDLException(
-            "vplink: BYPASS_API_URL not configured — "
-            "deploy link-bypass-api and set the URL in config."
-        )
+    import time as _time
+    import re as _re2
+    from urllib.parse import urlparse as _up
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    def _get_learn_more(current_url: str) -> str:
+        p = _up(current_url)
+        parts = p.path.strip("/").split("/")
+        prefix = f"/{parts[0]}/" if parts else "/"
+        return f"{p.scheme}://{p.netloc}{prefix}learn_more.php"
+
+    def _run_sync() -> str:
+        import requests as _req
+
+        sess = _req.Session()
+        sess.headers.update({"User-Agent": _UA})
+
+        # ── Step 1: GET vplink page → set ref+AppSession cookies ──────────────
+        r1 = sess.get(url, timeout=15, allow_redirects=True)
+        if r1.status_code != 200:
+            raise DDLException(f"vplink: HTTP {r1.status_code}")
+
+        # Extract techmint URL from <a href>
+        soup1 = BeautifulSoup(r1.text, "html.parser")
+        a_tag = soup1.find("a", href=_re2.compile(r'techmint\.in'))
+        techmint_url = a_tag["href"] if a_tag else None
+        if not techmint_url:
+            raise DDLException("vplink: techmint URL not found in page")
+
+        # ── Step 2: GET techmint landing → set PHPSESSID cookie ───────────────
+        r2 = sess.get(techmint_url, headers={"Referer": url}, timeout=15)
+        js_m = _re2.search(r'window\.location\.href\s*=\s*"([^"]+)"', r2.text)
+        if not js_m:
+            raise DDLException("vplink: techmint landing JS redirect not found")
+        article_url = js_m.group(1)
+
+        # ── Step 3: GET first article (register session) ──────────────────────
+        r3 = sess.get(article_url, headers={"Referer": techmint_url}, timeout=15)
+        current_referer = str(r3.url)
+
+        # ── Step 4: Follow learn_more.php chain ────────────────────────────────
+        for _ in range(12):
+            lm_url = _get_learn_more(current_referer)
+            try:
+                r_lm = sess.get(lm_url, headers={"Referer": current_referer}, timeout=15)
+            except Exception:
+                break
+
+            if r_lm.status_code != 200:
+                break
+
+            # Extract JS redirect from learn_more.php response
+            js_m2 = _re2.search(
+                r"(?:document|window)\.location(?:\.href)?\s*=\s*[\"']([^\"']+)[\"']",
+                r_lm.text,
+            )
+            if not js_m2:
+                break
+
+            next_url = js_m2.group(1)
+
+            # ── Final: vplink.in/<code> with go-link form ─────────────────────
+            if "vplink.in" in next_url or "vplinks.in" in next_url:
+                rf = sess.get(next_url, headers={"Referer": lm_url}, timeout=15)
+                soup_f = BeautifulSoup(rf.text, "html.parser")
+                golink = soup_f.select_one("form#go-link")
+                if not golink:
+                    raise DDLException(
+                        f"vplink: go-link form not found on final page ({rf.url})"
+                    )
+
+                hidden = {
+                    inp.get("name"): inp.get("value", "")
+                    for inp in golink.find_all("input")
+                    if inp.get("name")
+                }
+                action = golink.get("action") or "/links/go"
+                if not action.startswith("http"):
+                    action = f"https://vplink.in{action}"
+
+                counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', rf.text)
+                counter = int(counter_m.group(1)) if counter_m else 8
+                if counter > 0:
+                    _time.sleep(counter + 1)
+
+                r_go = sess.post(
+                    action,
+                    data=hidden,
+                    headers={
+                        "Referer": str(rf.url),
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Accept": "application/json, */*",
+                    },
+                    timeout=20,
+                )
+
+                try:
+                    result = _json.loads(r_go.content)
+                except Exception:
+                    raise DDLException(f"vplink: non-JSON response — {r_go.text[:200]}")
+
+                dest = result.get("url")
+                if not dest:
+                    raise DDLException(f"vplink: {result.get('message', 'no URL in response')}")
+                return dest
+
+            # Follow next_url to register visit, then loop back to learn_more
+            try:
+                r_next = sess.get(next_url, headers={"Referer": lm_url}, timeout=15)
+                current_referer = str(r_next.url)
+            except Exception:
+                current_referer = next_url
+
+        raise DDLException("vplink: learn_more.php chain exhausted without reaching vplink.in")
+
     try:
-        resp = await http.post(
-            f"{api_base}/bypass",
-            json={"url": url},
-            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0),
-        )
-    except NetworkError as e:
-        raise DDLException(f"vplink: API unreachable — {type(e).__name__}") from e
-
-    if resp.status_code != 200:
-        raise DDLException(f"vplink: API returned {resp.status_code}")
-
-    try:
-        data = resp.json()
-    except Exception as e:
-        raise DDLException("vplink: API returned invalid JSON") from e
-
-    if data.get("status") != "ok":
-        msg = data.get("message") or data.get("error") or "unknown error"
-        raise DDLException(f"vplink: {msg}")
-
-    result = data.get("result") or data.get("url") or data.get("data")
-    if not result:
-        raise DDLException("vplink: API response missing destination URL")
-
-    return result
-
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as exc:
+        raise DDLException(f"vplink: {type(exc).__name__} — {exc}") from exc
 
 async def greenmotors(url: str) -> str:
     """
@@ -1956,7 +2066,142 @@ async def earnlinks(url: str) -> str:
         raise DDLException(f"earnlinks: {type(e).__name__} — {e}") from e
 
 
-async def dotflix(url: str) -> str:
+async def itilink(url: str) -> str:
+    """
+    mvurl.site / liteurl.in — itiexamshala/earnlinks-backend shortener bypass.
+
+    These domains redirect through a chain ending at
+    itiexamshala.com/geio.php?grey=<code>. The grey code is the earnlinks.in
+    alias, so the bypass is:
+
+      1. Follow redirects manually until geio.php URL is seen, extract grey=
+      2. GET earnlinks.in/<grey> with Referer: itiexamshala.com
+         → go-link form served directly (same trick as earnlinks bypass)
+      3. Wait server-side counter → POST /links/go → destination
+
+    Redirect chain example:
+      mvurl.site/<alias>
+        → urls.tuktukgamer.in/<alias>
+        → url.tuktukgamer.in/<alias>
+        → redirect.tuktukgamer.in
+        → itiexamshala.com/geio.php?grey=<code>
+    """
+    _UA_D = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+    _UA_M = (
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    )
+    _REFERER = "https://itiexamshala.com/"
+
+    def _run_sync() -> str:
+        import time as _time
+        from curl_cffi.requests import Session as _CurlSess
+
+        # ── Step 1: Follow redirects to find grey code ────────────────────────
+        sess = _CurlSess(impersonate="chrome136")
+        grey_code = None
+        current_url = url
+
+        for _ in range(8):
+            r = sess.get(
+                current_url,
+                headers={"User-Agent": _UA_D},
+                allow_redirects=False,
+                timeout=10,
+            )
+            loc = r.headers.get("location", "")
+            if not loc:
+                break
+
+            # Check if this redirect or its target contains geio.php?grey=
+            for candidate in (loc, current_url):
+                m = _re.search(r'geio\.php\?grey=([^&\s#]+)', candidate)
+                if m:
+                    grey_code = m.group(1)
+                    break
+
+            if grey_code:
+                break
+
+            if not loc.startswith("http"):
+                break
+            current_url = loc
+
+        if not grey_code:
+            raise DDLException(
+                f"itilink: could not extract grey code from redirect chain "
+                f"(last URL: {current_url[:80]})"
+            )
+
+        # ── Step 2: Hit earnlinks.in/<grey> with itiexamshala referer ─────────
+        sess2 = _CurlSess(impersonate="chrome120")
+        earnlinks_url = f"https://earnlinks.in/{grey_code}"
+        page = sess2.get(
+            earnlinks_url,
+            headers={"User-Agent": _UA_M, "Referer": _REFERER},
+            allow_redirects=True,
+            timeout=20,
+        )
+
+        if page.status_code != 200 or "earnlinks.in" not in str(page.url):
+            raise DDLException(
+                f"itilink: earnlinks returned {page.status_code} for grey={grey_code}"
+            )
+
+        html = page.text
+        soup = BeautifulSoup(html, "html.parser")
+        form = soup.find(id="go-link")
+        if not form:
+            raise DDLException(
+                f"itilink: go-link form not found for grey={grey_code}"
+            )
+
+        hidden = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = form.get("action") or "/links/go"
+        if not action.startswith("http"):
+            action = f"https://earnlinks.in{action}"
+
+        counter_m = _re.search(r'counter_value["\s:=]+(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 8
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        r2 = sess2.post(
+            action,
+            data=hidden,
+            headers={
+                "User-Agent": _UA_M,
+                "Referer": str(page.url),
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, */*",
+            },
+            timeout=20,
+        )
+
+        try:
+            data = _json.loads(r2.content)
+        except Exception:
+            raise DDLException("itilink: invalid JSON response from /links/go")
+
+        dest = data.get("url")
+        if not dest:
+            raise DDLException(f"itilink: {data.get('message', 'no URL in response')}")
+
+        return dest
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"itilink: {type(e).__name__} — {e}") from e
     """
     dotflix.store share-page bypass — pure HTTP, no browser.
 
@@ -2493,3 +2738,187 @@ async def shortxlinks(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"shortxlinks: {type(e).__name__} — {e}") from e
+
+
+async def nexdrive(url: str) -> str:
+    """
+    nexdrive.fit — pure-HTTP bypass via fastdl.zip embed extraction.
+
+    Flow (confirmed Oct 2026):
+      1. GET nexdrive.fit/<path>/
+         → Page contains a "Download" button linking to:
+           https://fastdl.zip/embed?download=<ID>
+      2. GET fastdl.zip/embed?download=<ID>
+         → JS embeds the destination in:
+           var reurl = "https://fastdl.zip/dl.php?link=<encoded-GDrive-URL>"
+      3. Extract the `link=` query-param value → URL-decode → return direct URL
+
+    The final URL is always a Google/Googleusercontent CDN link that can be
+    downloaded directly (e.g. video-downloads.googleusercontent.com/…).
+    """
+    from urllib.parse import unquote as _unquote
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    try:
+        # Step 1: GET nexdrive page
+        r1 = await http.get(
+            url,
+            headers={"User-Agent": _UA},
+            timeout=_SHORT_TIMEOUT,
+        )
+        r1.raise_for_status()
+
+        # Find fastdl.zip embed URL
+        m_embed = _re.search(
+            r'https://fastdl\.zip/embed\?download=([A-Za-z0-9_-]+)',
+            r1.text,
+        )
+        if not m_embed:
+            raise DDLException("nexdrive: fastdl.zip embed link not found on page")
+
+        embed_url = f"https://fastdl.zip/embed?download={m_embed.group(1)}"
+
+        # Step 2: GET fastdl.zip embed page
+        r2 = await http.get(
+            embed_url,
+            headers={"User-Agent": _UA, "Referer": url},
+            timeout=_SHORT_TIMEOUT,
+        )
+        r2.raise_for_status()
+
+        # Step 3: Extract var reurl
+        m_reurl = _re.search(
+            r"var\s+reurl\s*=\s*[\"']([^\"']+)[\"']",
+            r2.text,
+        )
+        if not m_reurl:
+            raise DDLException("nexdrive: reurl variable not found in fastdl.zip embed page")
+
+        reurl = m_reurl.group(1)
+
+        # reurl is "https://fastdl.zip/dl.php?link=<encoded-URL>"
+        # Extract and decode the link= parameter
+        m_link = _re.search(r'[?&]link=([^&\s"\'<>]+)', reurl)
+        if m_link:
+            return _unquote(m_link.group(1))
+
+        # Fallback: reurl itself might be a direct URL
+        if reurl.startswith("http"):
+            return reurl
+
+        raise DDLException(f"nexdrive: could not extract final URL from reurl: {reurl[:100]}")
+
+    except DDLException:
+        raise
+    except NetworkError as e:
+        raise DDLException(f"nexdrive: {type(e).__name__}") from e
+    except Exception as e:
+        raise DDLException(f"nexdrive: {type(e).__name__} — {e}") from e
+
+
+async def eonmovies(url: str) -> str:
+    """
+    new4.eonmovies.click bypass — handles both /dl/ and /links/ pages.
+
+    /dl/<id> endpoint flow (confirmed Oct 2026):
+      • 302 → /links/<alias>       → own mirror-list page (scraped below)
+      • 302 → azonahub.biz/file/…  → DDL hoster (checker recurses)
+      • 302 → dtflix.ink/share/…   → dotflix-compatible (checker recurses)
+      • 302 → other external URL   → checker recurses
+
+    /links/<alias> page flow:
+      • Custom mirror-list page showing multiple <a href="/dl/<id>"> buttons
+      • Each button goes back through /dl/ to an external hoster
+      • Scrape all /dl/ hrefs, follow each until a non-/links/ URL is found
+
+    Both paths ultimately hand off to direct_link_checker via a returned URL.
+    """
+    _BASE = "https://new4.eonmovies.click"
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    def _resolve(loc: str) -> str:
+        """Make a relative Location header absolute."""
+        if loc.startswith("/"):
+            return f"{_BASE}{loc}"
+        if not loc.startswith("http"):
+            return f"{_BASE}/{loc}"
+        return loc
+
+    async def _follow_dl(dl_url: str) -> str | None:
+        """
+        Follow a single /dl/<id> redirect one hop.
+        Returns the resolved Location URL, or None on error.
+        """
+        try:
+            r = await http.get(
+                dl_url,
+                headers={"User-Agent": _UA},
+                follow_redirects=False,
+                timeout=_SHORT_TIMEOUT,
+            )
+        except NetworkError:
+            return None
+        if r.status_code not in (301, 302, 303, 307, 308):
+            return None
+        loc = r.headers.get("location", "")
+        return _resolve(loc) if loc else None
+
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+
+    # ── /links/<alias> page: scrape mirror buttons, try each dl ──────────────
+    if "/links/" in path:
+        try:
+            r_page = await http.get(
+                url,
+                headers={"User-Agent": _UA},
+                timeout=_SHORT_TIMEOUT,
+            )
+            r_page.raise_for_status()
+        except NetworkError as e:
+            raise DDLException(f"eonmovies: {type(e).__name__}") from e
+
+        soup = BeautifulSoup(r_page.text, "html.parser")
+        dl_hrefs = [
+            _resolve(a["href"])
+            for a in soup.find_all("a", href=_re.compile(r"^/dl/"))
+            if a.get("href")
+        ]
+        if not dl_hrefs:
+            raise DDLException("eonmovies: no /dl/ mirror links found on /links/ page")
+
+        # Try each mirror in order; return first non-/links/ resolved URL
+        errors: list[str] = []
+        for dl_url in dl_hrefs:
+            resolved = await _follow_dl(dl_url)
+            if resolved and "/links/" not in resolved:
+                return resolved
+            elif resolved:
+                errors.append(f"{dl_url} → loops back to /links/")
+            else:
+                errors.append(f"{dl_url} → no redirect")
+
+        raise DDLException(
+            f"eonmovies: all {len(dl_hrefs)} mirrors failed or looped — "
+            + "; ".join(errors[:3])
+        )
+
+    # ── /dl/<id>: follow single redirect ─────────────────────────────────────
+    resolved = await _follow_dl(url)
+    if not resolved:
+        try:
+            # Re-fetch to get proper error message
+            r2 = await http.get(url, headers={"User-Agent": _UA},
+                                follow_redirects=False, timeout=_SHORT_TIMEOUT)
+            raise DDLException(f"eonmovies: expected redirect, got {r2.status_code}")
+        except NetworkError as e:
+            raise DDLException(f"eonmovies: {type(e).__name__}") from e
+
+    return resolved

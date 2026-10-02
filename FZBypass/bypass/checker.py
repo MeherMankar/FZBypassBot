@@ -88,6 +88,8 @@ async def direct_link_checker(link, onlylink=False):
         blink = await gyanilinks(link)
     elif bool(match(r"https?:\/\/earnlinks\.\S+", link)):
         blink = await earnlinks(link)
+    elif bool(match(r"https?:\/\/(mvurl\.site|liteurl\.in)\S+", link)):
+        blink = await itilink(link)
     elif bool(match(r"https?:\/\/(aylink\.co|ay\.live)\S+", link)):
         blink = await aylink(link)
     elif bool(match(r"https?:\/\/(cpmlink\.(co|pro)|cpm\.link)\S+", link)):
@@ -138,6 +140,14 @@ async def direct_link_checker(link, onlylink=False):
     # DL Sites
     elif bool(match(r"https?:\/\/(www\.)?dotflix\.store\/share\S+", link)):
         return await dotflix(link)
+    elif bool(match(r"https?:\/\/(www\.)?dtflix\.ink\/share\S+", link)):
+        return await dotflix(link)
+    elif bool(match(r"https?:\/\/(new\d+\.)?eonmovies\.\S+\/dl\/\S+", link)):
+        blink = await eonmovies(link)
+    elif bool(match(r"https?:\/\/(new\d+\.)?eonmovies\.\S+\/links\/\S+", link)):
+        blink = await eonmovies(link)
+    elif bool(match(r"https?:\/\/nexdrive\.fit\S+", link)):
+        return await nexdrive(link)
     elif bool(match(r"https?:\/\/(www\.)?hblinks\.lol\S+", link)):
         return await hblinks(link)
     elif bool(match(r"https?:\/\/cinevood\.\S+", link)):

@@ -31,7 +31,7 @@
 
 ## ***Supported Sites***
 
-> Last Updated: **01-10-2026**
+> Last Updated: **02-10-2026**
 
 <details>
 <summary><b>Shortener Sites</b> — click to expand</summary>
@@ -53,17 +53,19 @@
 | `gyanilinks.com` · `gtlinks.me` | ✅ | Untested |
 | `justpaste.it` | ✅ | Untested |
 | `linksxyz.in` | ✅ | Untested |
+| `liteurl.in` · `mvurl.site` | ✅ | 30-09-2026 |
 | `mediafire.com` | ✅ | Untested |
 | `ouo.io` · `ouo.press` | ✅ | Untested |
 | `rslinks.net` | ✅ | Untested |
 | `shareus.io` · `shrs.link` | ✅ | Untested |
 | `shrdsk.me` | ✅ | Untested |
+| `shortxlinks.in` · `shortxlinks.com` | ✅ | 01-10-2026 |
 | `shrinkme.click` · `shrinkme.io` | ✅ | 30-09-2026 |
 | `srnky.com` · `clksz.com` · `oii.la` | ✅ | 01-10-2026 |
 | `surl.li` | ✅ | Untested |
 | `thinfi.com` | ✅ | Untested |
 | `try2link.com` | ✅ | Untested |
-| `vplink.in` · `vplinks.in` | ✅ | 30-09-2026 |
+| `vplink.in` · `vplinks.in` | ✅ | 02-10-2026 |
 
 </details>
 
@@ -78,6 +80,7 @@
 | `gofile.io` | ✅ | Untested |
 | `krakenfiles.com` | ✅ | Untested |
 | `mediafire.com` | ✅ | Untested |
+| `nexdrive.fit` | ✅ | 02-10-2026 |
 | `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | ✅ | Untested |
 | `pixeldrain.com` | ✅ | Untested |
 | `pornhub.com` | ✅ | 27-09-2026 |
@@ -96,7 +99,8 @@
 | `4khdhub.one` | ✅ | 27-09-2026 |
 | `cinevood.*` | ✅ | Untested |
 | `archive.toonworld4all.me` | ✅ | 30-09-2026 |
-| `dotflix.store` | ✅ | 30-09-2026 |
+| `dotflix.store` · `dtflix.ink` | ✅ | 02-10-2026 |
+| `eonmovies.click` (`/dl/` · `/links/`) | ✅ | 02-10-2026 |
 | `hblinks.lol` | ✅ | 27-09-2026 |
 | `hdhub4u.*` | ✅ | 27-09-2026 |
 | `kayoanime.com` | ✅ | Untested |
@@ -106,6 +110,7 @@
 | `1tamilmv.*` | ✅ | Untested |
 
 </details>
+
 
 <details>
 <summary><b>GDrive / DDL Index Sites</b> — click to expand</summary>
