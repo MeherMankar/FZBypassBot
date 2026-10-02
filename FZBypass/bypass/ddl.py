@@ -950,19 +950,47 @@ async def vplink(url: str) -> str:
         if r1.status_code != 200:
             raise DDLException(f"vplink: HTTP {r1.status_code}")
 
-        # Extract techmint URL from <a href>
+        # Extract techmint URL — try three methods in order:
+        # 1. <a href> via BeautifulSoup (works on most responses)
+        # 2. Raw href regex (handles HTML-entity encoded &amp; in href)
+        # 3. JS window.location redirect (handles Rocket Loader script mangling)
         soup1 = BeautifulSoup(r1.text, "html.parser")
         a_tag = soup1.find("a", href=_re2.compile(r'techmint\.in'))
         techmint_url = a_tag["href"] if a_tag else None
+
         if not techmint_url:
-            raise DDLException("vplink: techmint URL not found in page")
+            # Raw regex — handles &amp; entities and Rocket Loader script mangling
+            m_href = _re2.search(
+                r'href=["\x27](https://techmint\.in[^"\']+)["\x27]', r1.text
+            )
+            if m_href:
+                techmint_url = m_href.group(1).replace("&amp;", "&")
+
+        if not techmint_url:
+            # JS redirect — handles escaped slashes from Cloudflare Rocket Loader
+            m_js = _re2.search(
+                r'window\.location(?:\.href)?\s*=\s*["\x27\\]+(https?:\\?/\\?/techmint[^"\'\\]+)',
+                r1.text,
+            )
+            if m_js:
+                techmint_url = m_js.group(1).replace("\\/", "/")
+
+        if not techmint_url:
+            raise DDLException(
+                "vplink: techmint URL not found in page — "
+                "vplink may have changed partner domain"
+            )
 
         # ── Step 2: GET techmint landing → set PHPSESSID cookie ───────────────
         r2 = sess.get(techmint_url, headers={"Referer": url}, timeout=15)
-        js_m = _re2.search(r'window\.location\.href\s*=\s*"([^"]+)"', r2.text)
+        # Handle Rocket Loader: script type is mangled, slashes may be escaped
+        js_m = _re2.search(
+            r'window\.location(?:\.href)?\s*=\s*["\x27\\]+(https?[^"\'\\]+)["\x27]',
+            r2.text,
+        )
         if not js_m:
             raise DDLException("vplink: techmint landing JS redirect not found")
-        article_url = js_m.group(1)
+        article_url = js_m.group(1).replace("\\/", "/")
 
         # ── Step 3: GET first article (register session) ──────────────────────
         r3 = sess.get(article_url, headers={"Referer": techmint_url}, timeout=15)
@@ -980,14 +1008,15 @@ async def vplink(url: str) -> str:
                 break
 
             # Extract JS redirect from learn_more.php response
+            # Handle Rocket Loader escaped slashes: "https:\/\/..."
             js_m2 = _re2.search(
-                r"(?:document|window)\.location(?:\.href)?\s*=\s*[\"']([^\"']+)[\"']",
+                r"(?:document|window)\.location(?:\.href)?\s*=\s*[\"'\\]+([^\"'\\]+)",
                 r_lm.text,
             )
             if not js_m2:
                 break
 
-            next_url = js_m2.group(1)
+            next_url = js_m2.group(1).replace("\\/", "/")
 
             # ── Final: vplink.in/<code> with go-link form ─────────────────────
             if "vplink.in" in next_url or "vplinks.in" in next_url:
