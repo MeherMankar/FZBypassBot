@@ -41,6 +41,33 @@ _MOBILE_UA = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 )
 
+# ── Transient-error retry helper ─────────────────────────────────────────────
+_TRANSIENT_PHRASES = (
+    "TimeoutException", "ConnectError", "ReadError", "RemoteProtocol",
+    "ConnectionError", "ReadTimeout", "ConnectTimeout", "NetworkError",
+)
+
+async def _retry(coro_fn, *args, attempts: int = 2, **kwargs):
+    """
+    Retry an async bypass call up to `attempts` times on transient network
+    errors.  A DDLException whose message contains one of _TRANSIENT_PHRASES
+    is considered transient and eligible for a retry.  Any other DDLException
+    (logic error, page structure change, CAPTCHA, …) is re-raised immediately.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return await coro_fn(*args, **kwargs)
+        except DDLException as e:
+            msg = str(e)
+            if any(p in msg for p in _TRANSIENT_PHRASES):
+                last_exc = e
+                if attempt < attempts - 1:
+                    await asleep(1.5)
+                continue
+            raise  # non-transient — don't retry
+    raise last_exc  # type: ignore[misc]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FILE HOSTER RESOLVERS
@@ -979,7 +1006,10 @@ async def vplink(url: str) -> str:
                 }
                 action = golink.get("action") or "/links/go"
                 if not action.startswith("http"):
-                    action = f"https://vplink.in{action}"
+                    # Resolve relative action against the final URL's domain
+                    final_domain = _up(str(rf.url)).netloc or "vplink.in"
+                    final_scheme = _up(str(rf.url)).scheme or "https"
+                    action = f"{final_scheme}://{final_domain}{action}"
 
                 counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', rf.text)
                 counter = int(counter_m.group(1)) if counter_m else 8
@@ -2202,8 +2232,11 @@ async def itilink(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"itilink: {type(e).__name__} — {e}") from e
+
+
+async def dotflix(url: str) -> str:
     """
-    dotflix.store share-page bypass — pure HTTP, no browser.
+    dotflix.store / dtflix.ink share-page bypass — pure HTTP, no browser.
 
     The page is a Next.js App Router app that embeds all file data in
     self.__next_f.push([1,"..."]) script calls in the initial HTML.
@@ -2421,6 +2454,22 @@ async def srnky(url: str) -> str:
             )
         ts_token = peak_resp["data"]["token"]
 
+        # Bind subsequent requests to the same proxy IP that was used for Turnstile
+        # so the solved token is valid for the downstream requests.
+        if proxy:
+            # Convert compact host:port:user:pass or URL format to requests proxy dict
+            if proxy.startswith("http"):
+                proxy_dict = {"http": proxy, "https": proxy}
+            else:
+                parts = proxy.split(":")
+                if len(parts) == 4:
+                    h, p, u, pw = parts
+                    proxy_url = f"http://{u}:{pw}@{h}:{p}"
+                else:
+                    proxy_url = f"http://{proxy}"
+                proxy_dict = {"http": proxy_url, "https": proxy_url}
+            sess.proxies.update(proxy_dict)
+
         # ── Step 3: POST to advertisingcamps ──────────────────────────────────
         ac_r = sess.post(
             "https://advertisingcamps.com/taboola1/landing/",
@@ -2607,6 +2656,23 @@ async def shortxlinks(url: str) -> str:
         """Follow newwpsafelink/go chain until form#go-link is found.
         Returns (final_response, go_link_form_soup_element)."""
         import time as _t
+        # Known trusted intermediate domains for the wpSafeLink chain.
+        # If linkr points somewhere else the chain has changed — bail out
+        # with a clear error rather than silently following an unknown domain.
+        _TRUSTED_DOMAINS = {
+            "thetechhint.in", "mtc1.thetechhint.in",
+            "distancedata.in", "mtc1.distancedata.in",
+            "shortxlinks.in", "shortxlinks.com",
+        }
+
+        def _is_trusted(href: str) -> bool:
+            if not href:
+                return False
+            from urllib.parse import urlparse as _up2
+            host = (_up2(href).hostname or "").lstrip("www.")
+            # Accept if the full hostname or its base domain is trusted
+            return any(host == d or host.endswith("." + d) for d in _TRUSTED_DOMAINS)
+
         for _ in range(20):
             soup = BeautifulSoup(r.content, "lxml")
 
@@ -2637,6 +2703,12 @@ async def shortxlinks(url: str) -> str:
                     timeout=25,
                 )
                 if linkr:
+                    # Validate linkr is from a known chain domain before following
+                    if not _is_trusted(linkr):
+                        raise DDLException(
+                            f"shortxlinks: linkr points to unexpected domain "
+                            f"({linkr[:60]}) — chain domain may have changed"
+                        )
                     # Wait minimum time since stage start (server enforces ~15s)
                     elapsed = _t.time() - t_stage
                     remaining = max(0, _MIN_DELAY - elapsed)

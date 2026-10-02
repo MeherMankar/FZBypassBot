@@ -131,6 +131,26 @@
 
 ---
 
+## ***How It Works***
+
+Most shorteners gate the destination URL behind one of a few patterns. Each has a dedicated bypass:
+
+**Referer trick** — `earnlinks.in`, `shrinkme.click` and similar sites only serve the download form to visitors arriving from a specific referrer domain. Sending the correct `Referer` header bypasses the ad redirect entirely and loads the form directly.
+
+**learn_more.php chain** (`vplink.in`) — vplink routes visitors through a multi-hop chain across partner ad sites (`techmint.in` → `onlinewish.in`) via successive `learn_more.php` calls. The bot follows each hop in sequence, collecting session cookies along the way, until the final vplink page with the `go-link` form appears.
+
+**wpSafeLink chain** (`shortxlinks.in`) — A two-stage WordPress plugin chain through `thetechhint.in` and `distancedata.in`. Each stage POSTs a signed `newwpsafelink` token, waits the server-enforced minimum timer (~15s), then follows a `linkr` redirect to the next stage. Each redirect domain is validated against a known trusted-domain list to catch chain changes early.
+
+**adLinkFly + Turnstile** (`srnky.com`, `clksz.com`, `oii.la`) — Cloudflare Turnstile gates the ad form. The bot solves it via [Peak.fo](https://peak.fo), posts to `advertisingcamps.com`, registers the ad visit on `loanbixby.com`, then posts back to the shortener to receive the signed `ad_form_data` blob for the final `/links/go` call. The same proxy is bound to both the Turnstile solve and all downstream requests to avoid token–IP mismatch.
+
+**Token flow** (`aylink.co`, `cpmlink.pro`) — These expose a `/get/tk` endpoint that issues a session key from three time-based tokens in the landing page. The bot fetches the session key then posts a fake browser interaction signal to `/links/go2` to receive the destination URL.
+
+**fastdl.zip embed** (`nexdrive.fit`) — The page links to a `fastdl.zip/embed?download=<id>` page which contains a `var reurl` JavaScript variable holding the final Google CDN URL. Extracted with regex, no JS execution needed.
+
+**Redirect follower** (`eonmovies.click/dl/`) — A simple 302 that the bot follows one hop, resolves relative paths to the full domain, and returns the result to the checker for recursion into the appropriate bypass.
+
+---
+
 ## ***Proxy Setup***
 
 Some sites (e.g. `shrinkme.click`) block datacenter IPs via Cloudflare. Set `PROXY_URL` on Render to use residential proxies:
@@ -220,7 +240,6 @@ Copy `sample_config.env` → `config.env` and fill in:
 | `GRABX_API_KEY` | ➖ | grabx-api key |
 | `TERABOX_API_URL` | ➖ | terabox-downloader-api URL (fallback) |
 | `TERA_COOKIE` | ➖ | Terabox `ndus` cookie (last resort) |
-| `BYPASS_API_URL` | ➖ | link-bypass-api URL (vplink fallback) |
 | `PEAK_API_KEY` | ➖ | Peak.fo key for Turnstile shorteners — [Setup ↗](#peak-setup-turnstile-shorteners) |
 | `PROXY_URL` | ➖ | Comma-separated residential proxies — [Setup ↗](#proxy-setup) |
 | `GDTOT_CRYPT` | ➖ | GdToT cookie |
