@@ -942,11 +942,28 @@ async def vplink(url: str) -> str:
     def _run_sync() -> str:
         import cloudscraper as _cs
 
-        # vplink.in is behind Cloudflare JS challenge — cloudscraper handles it
-        # by executing the JS challenge in Python (no browser needed).
+        # vplink.in is behind Cloudflare JS challenge — cloudscraper handles it.
+        # On datacenter IPs (Render) Cloudflare blocks even cloudscraper;
+        # route through PROXY_URL if configured.
+        proxy = Config.next_proxy()
+        proxies = None
+        if proxy:
+            if proxy.startswith("http"):
+                proxies = {"http": proxy, "https": proxy}
+            else:
+                parts = proxy.split(":")
+                if len(parts) == 4:
+                    h, p, u, pw = parts
+                    proxy_url = f"http://{u}:{pw}@{h}:{p}"
+                else:
+                    proxy_url = f"http://{proxy}"
+                proxies = {"http": proxy_url, "https": proxy_url}
+
         sess = _cs.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
         )
+        if proxies:
+            sess.proxies.update(proxies)
         sess.headers.update({"User-Agent": _UA})
 
         # ── Step 1: GET vplink page → set ref+AppSession cookies ──────────────
@@ -3049,3 +3066,123 @@ async def eonmovies(url: str) -> str:
             raise DDLException(f"eonmovies: {type(e).__name__}") from e
 
     return resolved
+
+
+async def toxcloud(url: str) -> str:
+    """
+    TOXcloud (cloud.azonahub.biz) — pure-HTTP scraper bypass.
+
+    TOXcloud is the rebrand of azonahub.biz. Each file page has download
+    links embedded directly in the HTML and a /mirror/<id> page with
+    additional mirror links — no AJAX required.
+
+    Flow:
+      1. GET cloud.azonahub.biz/file/<id>
+         → Extract filename, size, VikingFile and GCloud onclick URLs
+      2. GET cloud.azonahub.biz/mirror/<id>
+         → Extract all mirror links (VikingFile, Abyss, Filepress, etc.)
+      3. Return formatted message with all available links
+    """
+    from urllib.parse import urlparse as _up2
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    # Normalise: accept cloud.azonahub.biz/file/<id> or short.azonahub.biz/<id>
+    parsed = _up2(url)
+    if "short.azonahub" in (parsed.hostname or ""):
+        # short.azonahub.biz/<id> → 302 → cloud.azonahub.biz/file/<id>
+        try:
+            r0 = await http.get(url, headers={"User-Agent": _UA},
+                                follow_redirects=False, timeout=_SHORT_TIMEOUT)
+            loc = r0.headers.get("location", "")
+            if loc:
+                url = loc if loc.startswith("http") else f"https://cloud.azonahub.biz{loc}"
+            else:
+                raise DDLException("toxcloud: short redirect returned no Location")
+        except NetworkError as e:
+            raise DDLException(f"toxcloud: {type(e).__name__}") from e
+
+    # Extract file ID from path: /file/<id>
+    path_parts = _up2(url).path.strip("/").split("/")
+    if len(path_parts) < 2 or path_parts[0] != "file":
+        raise DDLException(f"toxcloud: unexpected URL format — {url}")
+    file_id = path_parts[1]
+    base = "https://cloud.azonahub.biz"
+
+    _H = {"User-Agent": _UA, "Referer": url}
+
+    try:
+        import asyncio as _asyncio
+        r1, r2 = await _asyncio.gather(
+            http.get(url, headers=_H, timeout=_SHORT_TIMEOUT),
+            http.get(f"{base}/mirror/{file_id}", headers=_H, timeout=_SHORT_TIMEOUT),
+        )
+    except NetworkError as e:
+        raise DDLException(f"toxcloud: {type(e).__name__}") from e
+
+    if r1.status_code == 404:
+        raise DDLException("toxcloud: file not found (404)")
+    if r1.status_code != 200:
+        raise DDLException(f"toxcloud: HTTP {r1.status_code}")
+
+    soup1 = BeautifulSoup(r1.text, "html.parser")
+    soup2 = BeautifulSoup(r2.text, "html.parser") if r2.status_code == 200 else None
+
+    # ── Metadata ──────────────────────────────────────────────────────────────
+    title_tag = soup1.find("meta", property="og:title")
+    filename = title_tag["content"].replace("Download ", "").strip() if title_tag else "Unknown"
+    desc_tag = soup1.find("meta", property="og:description")
+    size = "Unknown"
+    if desc_tag:
+        m_size = _re.search(r"File Size:\s*([^\|]+)", desc_tag.get("content", ""))
+        if m_size:
+            size = m_size.group(1).strip()
+
+    # ── Collect links from main page (onclick) ────────────────────────────────
+    seen: set[str] = set()
+    links: list[tuple[str, str]] = []
+
+    def _add(label: str, href: str) -> None:
+        href = href.strip()
+        if href and href not in seen and href.startswith("http"):
+            seen.add(href)
+            links.append((label, href))
+
+    for btn in soup1.find_all("button", onclick=True):
+        onclick = btn.get("onclick", "")
+        m = _re.search(r"window\.open\(['\"]([^'\"]+)['\"]", onclick)
+        if m:
+            label = " ".join(btn.get_text().split())
+            _add(label, m.group(1))
+
+    # ── Collect links from /mirror/ page ─────────────────────────────────────
+    if soup2:
+        for btn in soup2.find_all("button", onclick=True):
+            onclick = btn.get("onclick", "")
+            m = _re.search(r"window\.open\(['\"]([^'\"]+)['\"]", onclick)
+            if m:
+                label = " ".join(btn.get_text().split())
+                _add(label, m.group(1))
+        for a in soup2.find_all("a", href=True):
+            href = a["href"]
+            if href.startswith("http") and "azonahub" not in href and "eonmovies" not in href:
+                label = " ".join(a.get_text().split()) or "Mirror"
+                _add(label, href)
+
+    if not links:
+        raise DDLException("toxcloud: no download links found on page")
+
+    lines = [
+        f"▸ <b>Title</b> (<a href=\"{url}\">{url}</a>) ➙ <code>{filename}</code>",
+        "",
+        f"▸ <b>Size</b> ➙ <code>{size}</code>",
+        "",
+        "▸ <b>Download Links</b> ➙",
+        "",
+    ]
+    for label, link in links:
+        lines.append(f"    • <a href=\"{link}\">{label}</a>")
+    return "\n".join(lines)

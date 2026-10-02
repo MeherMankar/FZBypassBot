@@ -144,6 +144,8 @@ async def direct_link_checker(link, onlylink=False):
         return await dotflix(link)
     elif bool(match(r"https?:\/\/(www\.)?dtflix\.ink\/share\S+", link)):
         return await dotflix(link)
+    elif bool(match(r"https?:\/\/(cloud|short)\.azonahub\.biz\S+", link)):
+        return await toxcloud(link)
     elif bool(match(r"https?:\/\/(new\d+\.)?eonmovies\.\S+\/dl\/\S+", link)):
         blink = await eonmovies(link)
     elif bool(match(r"https?:\/\/(new\d+\.)?eonmovies\.\S+\/links\/\S+", link)):

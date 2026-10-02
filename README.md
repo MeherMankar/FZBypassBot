@@ -101,6 +101,7 @@
 | `archive.toonworld4all.me` | ✅ | 30-09-2026 |
 | `dotflix.store` · `dtflix.ink` | ✅ | 02-10-2026 |
 | `eonmovies.click` (`/dl/` · `/links/`) | ✅ | 02-10-2026 |
+| `azonahub.biz` (TOXcloud — `cloud.azonahub.biz` · `short.azonahub.biz`) | ✅ | 02-10-2026 |
 | `hblinks.lol` | ✅ | 27-09-2026 |
 | `hdhub4u.*` | ✅ | 27-09-2026 |
 | `kayoanime.com` | ✅ | Untested |
