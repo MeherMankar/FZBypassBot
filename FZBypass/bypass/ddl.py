@@ -940,15 +940,23 @@ async def vplink(url: str) -> str:
         return f"{p.scheme}://{p.netloc}{prefix}learn_more.php"
 
     def _run_sync() -> str:
-        import requests as _req
+        import cloudscraper as _cs
 
-        sess = _req.Session()
+        # vplink.in is behind Cloudflare JS challenge — cloudscraper handles it
+        # by executing the JS challenge in Python (no browser needed).
+        sess = _cs.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
         sess.headers.update({"User-Agent": _UA})
 
         # ── Step 1: GET vplink page → set ref+AppSession cookies ──────────────
         r1 = sess.get(url, timeout=15, allow_redirects=True)
         if r1.status_code != 200:
             raise DDLException(f"vplink: HTTP {r1.status_code}")
+
+        # Capture vplink.in cookies now — we need to pass them explicitly on the
+        # final return visit (cloudscraper may reset the jar during CF solving).
+        vplink_cookies = {c.name: c.value for c in sess.cookies if "vplink" in (c.domain or "")}
 
         # Extract techmint URL — try three methods in order:
         # 1. <a href> via BeautifulSoup (works on most responses)
@@ -982,7 +990,11 @@ async def vplink(url: str) -> str:
             )
 
         # ── Step 2: GET techmint landing → set PHPSESSID cookie ───────────────
-        r2 = sess.get(techmint_url, headers={"Referer": url}, timeout=15)
+        r2 = sess.get(techmint_url, headers={"Referer": url}, timeout=30)
+        if r2.status_code >= 500:
+            raise DDLException(
+                f"vplink: techmint.in is down (HTTP {r2.status_code}) — try again later"
+            )
         # Handle Rocket Loader: script type is mangled, slashes may be escaped
         js_m = _re2.search(
             r'window\.location(?:\.href)?\s*=\s*["\x27\\]+(https?[^"\'\\]+)["\x27]',
@@ -993,14 +1005,14 @@ async def vplink(url: str) -> str:
         article_url = js_m.group(1).replace("\\/", "/")
 
         # ── Step 3: GET first article (register session) ──────────────────────
-        r3 = sess.get(article_url, headers={"Referer": techmint_url}, timeout=15)
+        r3 = sess.get(article_url, headers={"Referer": techmint_url}, timeout=30)
         current_referer = str(r3.url)
 
         # ── Step 4: Follow learn_more.php chain ────────────────────────────────
         for _ in range(12):
             lm_url = _get_learn_more(current_referer)
             try:
-                r_lm = sess.get(lm_url, headers={"Referer": current_referer}, timeout=15)
+                r_lm = sess.get(lm_url, headers={"Referer": current_referer}, timeout=30)
             except Exception:
                 break
 
@@ -1020,13 +1032,26 @@ async def vplink(url: str) -> str:
 
             # ── Final: vplink.in/<code> with go-link form ─────────────────────
             if "vplink.in" in next_url or "vplinks.in" in next_url:
-                rf = sess.get(next_url, headers={"Referer": lm_url}, timeout=15)
+                # Pass vplink.in cookies explicitly — ensures refAzaao is sent
+                # even if cloudscraper's jar was partially cleared during CF solving.
+                rf = sess.get(next_url, headers={"Referer": lm_url},
+                              cookies=vplink_cookies, timeout=30)
                 soup_f = BeautifulSoup(rf.text, "html.parser")
                 golink = soup_f.select_one("form#go-link")
                 if not golink:
-                    raise DDLException(
-                        f"vplink: go-link form not found on final page ({rf.url})"
-                    )
+                    # Check if it's a CF challenge or the plain redirect page again
+                    if any(k in rf.text for k in ("techmint.in", "Please Wait", "Opening Link")):
+                        # Got the redirect page again — need to follow the chain once more
+                        # The session cookies should be present; try re-fetching once
+                        rf = sess.get(next_url, headers={"Referer": lm_url},
+                                      cookies=vplink_cookies, timeout=15)
+                        soup_f = BeautifulSoup(rf.text, "html.parser")
+                        golink = soup_f.select_one("form#go-link")
+                    if not golink:
+                        raise DDLException(
+                            f"vplink: go-link form not found on final page ({rf.url}) "
+                            f"— page title: {(soup_f.find('title') or '').get_text()[:60] if soup_f.find('title') else rf.text[:100]}"
+                        )
 
                 hidden = {
                     inp.get("name"): inp.get("value", "")
@@ -1053,7 +1078,8 @@ async def vplink(url: str) -> str:
                         "X-Requested-With": "XMLHttpRequest",
                         "Accept": "application/json, */*",
                     },
-                    timeout=20,
+                    cookies=vplink_cookies,
+                    timeout=30,
                 )
 
                 try:
@@ -1068,7 +1094,7 @@ async def vplink(url: str) -> str:
 
             # Follow next_url to register visit, then loop back to learn_more
             try:
-                r_next = sess.get(next_url, headers={"Referer": lm_url}, timeout=15)
+                r_next = sess.get(next_url, headers={"Referer": lm_url}, timeout=30)
                 current_referer = str(r_next.url)
             except Exception:
                 current_referer = next_url
