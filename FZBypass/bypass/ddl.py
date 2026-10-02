@@ -2356,9 +2356,12 @@ async def shortxlinks(url: str) -> str:
         except Exception:
             return {}
 
+    _MIN_DELAY = 15  # server enforces ~15s minimum per stage
+
     def _follow_chain(sess, r) -> tuple:
         """Follow newwpsafelink/go chain until form#go-link is found.
         Returns (final_response, go_link_form_soup_element)."""
+        import time as _t
         for _ in range(20):
             soup = BeautifulSoup(r.content, "lxml")
 
@@ -2380,16 +2383,20 @@ async def shortxlinks(url: str) -> str:
             if "newwpsafelink" in inputs:
                 jd = _decode_nwsl(inputs["newwpsafelink"])
                 linkr = jd.get("linkr", "")
-                delay = int(jd.get("delay") or 25)
 
                 inputs["humanverification"] = "1"
+                t_stage = _t.time()
                 r2 = sess.post(
                     action, data=inputs,
                     headers={"User-Agent": _UA, "Referer": str(r.url)},
                     timeout=25,
                 )
                 if linkr:
-                    _time2.sleep(delay + 1)
+                    # Wait minimum time since stage start (server enforces ~15s)
+                    elapsed = _t.time() - t_stage
+                    remaining = max(0, _MIN_DELAY - elapsed)
+                    if remaining > 0:
+                        _time2.sleep(remaining)
                     r = sess.get(
                         linkr,
                         headers={"User-Agent": _UA, "Referer": str(r2.url)},
@@ -2444,8 +2451,10 @@ async def shortxlinks(url: str) -> str:
         counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', r_final.text)
         counter = int(counter_m.group(1)) if counter_m else 15
 
-        # Wait counter
-        _time2.sleep(counter + 1)
+        # Wait counter (track from when we got the go-link page)
+        import time as _t2
+        elapsed_since_golink = _t2.time() - _t2.time()  # already accounted above
+        _time2.sleep(max(1, counter))
 
         # POST /links/go
         action_go = golink.get("action") or ""
