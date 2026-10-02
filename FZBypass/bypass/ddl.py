@@ -2306,3 +2306,181 @@ async def srnky(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"srnky: {type(e).__name__} — {e}") from e
+
+
+async def shortxlinks(url: str) -> str:
+    """
+    shortxlinks.in / shortxlinks.com — wpSafeLink two-stage chain bypass.
+
+    Confirmed flow (discovered via CDP spy + HTTP tracing):
+
+    1. GET shortxlinks.in/<alias>
+       → Redirects to shortxlinks.com → mtc1.thetechhint.in/?adlinkfly=...
+       → Landing page: form with go=base64(shortxlinks URL + token)
+
+    2. POST go to thetechhint.in
+       → Returns newwpsafelink (base64 JSON with delay=25s and linkr URL)
+
+    3. POST humanverification=1 + newwpsafelink to thetechhint.in
+       → Returns another article page with next newwpsafelink
+
+    4. Decode linkr, wait delay (25s), GET linkr
+       → Redirects to mtc1.distancedata.in/?wpsafelink=...
+       → Another landing with go=base64
+
+    5. Repeat steps 2-4 for distancedata.in (another 25s delay)
+       → linkr now points back to shortxlinks.com/<alias>?<token>
+
+    6. GET shortxlinks.com/<alias>?<token>
+       → Page has form#go-link with ad_form_data (adLinkFly platform)
+
+    7. Wait counter_value seconds (15s)
+       → POST /links/go → {"status":"success","url":"<destination>"}
+
+    Total time: ~65s (two 25s delays + 15s counter).
+    Pure HTTP, no browser, no CAPTCHA required.
+    """
+    import base64 as _b64
+    import json as _json2
+    import time as _time2
+    from curl_cffi.requests import Session as _CurlSess
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    def _decode_nwsl(val: str) -> dict:
+        try:
+            return _json2.loads(_b64.b64decode(val + "==").decode("utf-8", errors="replace"))
+        except Exception:
+            return {}
+
+    def _follow_chain(sess, r) -> tuple:
+        """Follow newwpsafelink/go chain until form#go-link is found.
+        Returns (final_response, go_link_form_soup_element)."""
+        for _ in range(20):
+            soup = BeautifulSoup(r.content, "lxml")
+
+            golink = soup.select_one("form#go-link")
+            if golink:
+                return r, golink
+
+            form = soup.find("form")
+            if not form:
+                return r, None
+
+            action = form.get("action") or str(r.url)
+            inputs = {
+                i.get("name"): i.get("value", "")
+                for i in form.find_all("input")
+                if i.get("name")
+            }
+
+            if "newwpsafelink" in inputs:
+                jd = _decode_nwsl(inputs["newwpsafelink"])
+                linkr = jd.get("linkr", "")
+                delay = int(jd.get("delay") or 25)
+
+                inputs["humanverification"] = "1"
+                r2 = sess.post(
+                    action, data=inputs,
+                    headers={"User-Agent": _UA, "Referer": str(r.url)},
+                    timeout=25,
+                )
+                if linkr:
+                    _time2.sleep(delay + 1)
+                    r = sess.get(
+                        linkr,
+                        headers={"User-Agent": _UA, "Referer": str(r2.url)},
+                        timeout=25, allow_redirects=True,
+                    )
+                else:
+                    r = r2
+
+            elif "go" in inputs:
+                r = sess.post(
+                    action, data=inputs,
+                    headers={"User-Agent": _UA, "Referer": str(r.url)},
+                    timeout=25, allow_redirects=True,
+                )
+            else:
+                return r, None
+
+        return r, None
+
+    def _run_sync() -> str:
+        proxy = Config.next_proxy()
+        sess = _CurlSess(
+            impersonate="chrome136",
+            proxies={"https": proxy, "http": proxy} if proxy else None,
+        )
+
+        # Step 1: GET alias — follows shortxlinks.in → .com → thetechhint.in
+        r = sess.get(
+            url,
+            headers={"User-Agent": _UA},
+            timeout=20,
+            allow_redirects=True,
+        )
+
+        # Step 2–7: Follow the full wpSafeLink chain
+        r_final, golink = _follow_chain(sess, r)
+
+        if not golink:
+            raise DDLException(
+                f"shortxlinks: go-link form not found after chain traversal "
+                f"(final URL: {str(r_final.url)[:80]})"
+            )
+
+        # Extract hidden inputs
+        hidden = {
+            i.get("name"): i.get("value", "")
+            for i in golink.find_all("input")
+            if i.get("name")
+        }
+
+        # Read counter_value
+        counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', r_final.text)
+        counter = int(counter_m.group(1)) if counter_m else 15
+
+        # Wait counter
+        _time2.sleep(counter + 1)
+
+        # POST /links/go
+        action_go = golink.get("action") or ""
+        if not action_go.startswith("http"):
+            base = "/".join(str(r_final.url).split("/")[:3])
+            action_go = base + ("" if action_go.startswith("/") else "/") + action_go
+
+        go_r = sess.post(
+            action_go,
+            data=hidden,
+            headers={
+                "User-Agent": _UA,
+                "Referer": str(r_final.url),
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+            timeout=20,
+        )
+
+        try:
+            result = go_r.json()
+        except Exception:
+            raise DDLException(
+                f"shortxlinks: /links/go non-JSON response — {go_r.text[:200]}"
+            )
+
+        if result.get("status") == "success" and result.get("url"):
+            return result["url"]
+        raise DDLException(
+            f"shortxlinks: /links/go failed — {result.get('message', result)}"
+        )
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"shortxlinks: {type(e).__name__} — {e}") from e

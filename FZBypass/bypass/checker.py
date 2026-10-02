@@ -96,6 +96,8 @@ async def direct_link_checker(link, onlylink=False):
         blink = await boost(link)
     elif bool(match(r"https?:\/\/(shrinkme\.click|shrinkme\.io)\S+", link)):
         blink = await shrinkme(link)
+    elif bool(match(r"https?:\/\/(shortxlinks\.(in|com))\S+", link)):
+        blink = await shortxlinks(link)
     elif bool(match(r"https?:\/\/(srnky\.com|clksz\.com|oii\.la)\S+", link)):
         blink = await srnky(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
