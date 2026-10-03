@@ -524,6 +524,111 @@ async def ouo(url: str) -> str:
     return location
 
 
+async def gplinks(url: str) -> str:
+    """
+    gplinks.co / gplinks.in — adLinkFly go-link form bypass.
+
+    Uses curl_cffi Chrome impersonation to pass Cloudflare TLS checks.
+    Reads counter_value from the page and waits the server-enforced timer
+    before POSTing to /links/go.
+    """
+    import time as _time
+    from urllib.parse import urljoin as _urljoin
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    def _run_sync() -> str:
+        proxy = Config.next_proxy()
+        sess = cSession(
+            impersonate="chrome136",
+            proxies={"http": proxy, "https": proxy} if proxy else None,
+        )
+        sess.headers.update({
+            "User-Agent": _UA,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+
+        r = sess.get(url, allow_redirects=True, timeout=20)
+        if r.status_code >= 400:
+            raise DDLException(f"gplinks: HTTP {r.status_code}")
+
+        html = r.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Detect protected/subscription page
+        title = soup.title.get_text(" ", strip=True).lower() if soup.title else ""
+        if any(m in title for m in ("protected link", "confirm subscription", "gplinks premium")):
+            raise DDLException("gplinks: protected/subscription page — cannot bypass")
+
+        # Find go-link form
+        form = soup.select_one("form#go-link")
+        if form is None:
+            for candidate in soup.find_all("form"):
+                if "/links/go" in (candidate.get("action") or ""):
+                    form = candidate
+                    break
+
+        if form is None:
+            # Check for plain redirect
+            loc = r.headers.get("Location")
+            if loc:
+                return _urljoin(str(r.url), loc)
+            raise DDLException("gplinks: go-link form not found on page")
+
+        data = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = _urljoin(str(r.url), form.get("action") or "/links/go")
+
+        # Server-side countdown
+        counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 0
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        r2 = sess.post(
+            action,
+            data=data,
+            headers={
+                "Referer": str(r.url),
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+            allow_redirects=False,
+            timeout=20,
+        )
+
+        # HTTP redirect response
+        loc = r2.headers.get("Location")
+        if loc:
+            return _urljoin(str(r2.url), loc)
+
+        # JSON response
+        try:
+            obj = r2.json()
+        except Exception:
+            raise DDLException(f"gplinks: unexpected response — {r2.text[:200]}")
+
+        dest = obj.get("url") or obj.get("destination") or obj.get("link")
+        if isinstance(dest, str) and dest.startswith("http"):
+            return dest
+
+        raise DDLException(f"gplinks: {obj.get('message', 'no destination in response')}")
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"gplinks: {type(e).__name__} — {e}") from e
+
+
 async def transcript(url: str, DOMAIN: str, ref: str, sltime: float) -> str:
     """
     Generic countdown-shortener bypass using httpx.

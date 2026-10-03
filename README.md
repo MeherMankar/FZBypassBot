@@ -50,6 +50,7 @@
 | `dropbox.com` | ✅ | Untested |
 | `earnlinks.in` | ✅ | 30-09-2026 |
 | `greenmotors.club` | ✅ | 26-09-2026 |
+| `gplinks.co` · `gplinks.in` | ✅ | 02-10-2026 |
 | `gyanilinks.com` · `gtlinks.me` | ✅ | Untested |
 | `justpaste.it` | ✅ | Untested |
 | `linksxyz.in` | ✅ | Untested |
