@@ -22,6 +22,13 @@ _SKIP_DOMAINS = (
 )
 
 
+def extract_inline_link(query_text: str) -> str | None:
+    command, separator, link = query_text.strip().partition(" ")
+    if command.casefold() != "!bp" or not separator:
+        return None
+    return link.strip() or None
+
+
 @Bypass.on_message(BypassFilter & (user(Config.OWNER_ID) | AuthChatsTopics))
 async def bypass_check(client, message):
     if (reply_to := message.reply_to_message) and (
@@ -29,10 +36,13 @@ async def bypass_check(client, message):
     ):
         txt = reply_to.text or reply_to.caption
         entities = reply_to.entities or reply_to.caption_entities
-    elif Config.AUTO_BYPASS or len(message.text.split()) > 1:
-        txt = message.text
-        entities = message.entities
+    elif Config.AUTO_BYPASS or len((message.text or "").split()) > 1:
+        txt = message.text or message.caption
+        entities = message.entities or message.caption_entities
     else:
+        return await message.reply("<i>No Link Provided!</i>")
+
+    if not txt or not entities:
         return await message.reply("<i>No Link Provided!</i>")
 
     wait_msg = await message.reply("<i>Bypassing...</i>")
@@ -191,9 +201,8 @@ async def channel_bypass(client, message):
 @Bypass.on_inline_query()
 async def inline_query(client, query):
     answers = []
-    string = query.query.lower()
-    if string.startswith("!bp "):
-        link = string.strip("!bp ")
+    link = extract_inline_link(query.query)
+    if link:
         start = time()
         try:
             bp_link = await direct_link_checker(link, True)

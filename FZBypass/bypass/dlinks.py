@@ -304,7 +304,8 @@ async def gdtot(url: str) -> str:
         f"┠<b>GDToT:</b> <a href=\"{url}\">Click Here</a>\n"
     )
     if Config.DIRECT_INDEX:
-        parse_txt += f"┠<b>Temp Index:</b> <a href='{get_dl(d_link)}'>Click Here</a>\n"
+        temp_link = await asyncio.to_thread(get_dl, d_link)
+        parse_txt += f"┠<b>Temp Index:</b> <a href='{temp_link}'>Click Here</a>\n"
     parse_txt += f"┗<b>GDrive:</b> <a href='{d_link}'>Click Here</a>"
     return parse_txt
 
@@ -601,7 +602,8 @@ async def appflix(url: str) -> str:
         if dbotv2:
             parse_txt += f"\n┠<b>DriveBot V2:</b> <a href='{dbotv2}'>Click Here</a>"
         if d_link and Config.DIRECT_INDEX:
-            parse_txt += f"\n┠<b>Temp Index:</b> <a href='{get_dl(d_link)}'>Click Here</a>"
+            temp_link = await asyncio.to_thread(get_dl, d_link)
+            parse_txt += f"\n┠<b>Temp Index:</b> <a href='{temp_link}'>Click Here</a>"
         parse_txt += f"\n┗<b>GDrive:</b> <a href='{d_link}'>Click Here</a>"
         return parse_txt
 
@@ -680,7 +682,8 @@ async def sharerpw(url: str, force: bool = False) -> str:
     )
     if res.get("status") == 0:
         if Config.DIRECT_INDEX:
-            parse_data += f"\n┠<b>Temp Index:</b> <a href='{get_dl(res['url'])}'>Click Here</a>"
+            temp_link = await asyncio.to_thread(get_dl, res["url"])
+            parse_data += f"\n┠<b>Temp Index:</b> <a href='{temp_link}'>Click Here</a>"
         return parse_data + f"\n┗<b>GDrive:</b> <a href='{res['url']}'>Click Here</a>"
     if res.get("status") == 2:
         msg = res.get("message", "").replace("<br/>", "\n")

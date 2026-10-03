@@ -170,6 +170,7 @@ FZ.*
 !/tests/
 /tests/*
 !/tests/test_resolver_cassettes.py
+!/tests/test_message_regressions.py
 !/tests/resolver_cassette.py
 !/tests/live_mediafire.py
 !/tests/fixtures/

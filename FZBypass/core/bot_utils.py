@@ -40,13 +40,15 @@ AuthChannels = create(auth_channel)
 
 
 async def auto_bypass(_, c, message):
+    text = message.text or message.caption or ""
+    entities = message.entities or message.caption_entities
     if (
         Config.AUTO_BYPASS
-        and message.entities
-        and not match(rf"^\/({EXEC_CMDS})($| )", message.text)
+        and entities
+        and not match(rf"^\/({EXEC_CMDS})($| )", text)
         and any(
             enty.type in [MessageEntityType.TEXT_LINK, MessageEntityType.URL]
-            for enty in message.entities
+            for enty in entities
         )
     ):
         return True
@@ -79,7 +81,8 @@ def get_dl(link, direct_mode=False):
         return "No Direct Index Added !"
     try:
         return rget(
-            f"{Config.DIRECT_INDEX}/generate.aspx?id={get_gdriveid(link)}"
+            f"{Config.DIRECT_INDEX}/generate.aspx?id={get_gdriveid(link)}",
+            timeout=15,
         ).json()["link"]
     except:
         return f"{Config.DIRECT_INDEX}/direct.aspx?id={get_gdriveid(link)}"

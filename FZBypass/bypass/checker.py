@@ -1,4 +1,5 @@
 from re import match
+from asyncio import to_thread
 from urllib.parse import urlparse
 
 from FZBypass.bypass.dlinks import *
@@ -86,7 +87,7 @@ async def direct_link_checker(link, onlylink=False):
     elif bool(match(r"https?:\/\/(1drv\.ms|onedrive\.live\.com|sharepoint\.com)\S+", link)):
         return await onedrive(link)
     elif "drive.google.com" in link:
-        return get_dl(link, True)
+        return await to_thread(get_dl, link, True)
 
     # DDL Links
     elif bool(match(r"https?:\/\/try2link\.\S+", link)):

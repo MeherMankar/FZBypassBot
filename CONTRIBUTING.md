@@ -79,8 +79,8 @@ lint and formatting checks, install Ruff in your development environment and
 run it against the files you changed:
 
 ```powershell
-ruff check tests/test_webshare.py tests/test_resolver_cassettes.py tests/resolver_cassette.py tests/live_mediafire.py
-ruff format --check tests/test_webshare.py tests/test_resolver_cassettes.py tests/resolver_cassette.py tests/live_mediafire.py
+ruff check tests/test_webshare.py tests/test_resolver_cassettes.py tests/test_message_regressions.py tests/resolver_cassette.py tests/live_mediafire.py
+ruff format --check tests/test_webshare.py tests/test_resolver_cassettes.py tests/test_message_regressions.py tests/resolver_cassette.py tests/live_mediafire.py
 ```
 
 These are the same scoped checks used by CI. You can also run Ruff against
