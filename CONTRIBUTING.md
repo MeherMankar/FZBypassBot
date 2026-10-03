@@ -71,19 +71,23 @@ The same command works in a POSIX shell. It discovers the existing Webshare
 unit tests and the resolver cassette tests. Do not run live checks as part of
 this command.
 
-The current GitHub Actions workflows run Ruff; they do not run the unittest
-suite. A green workflow therefore does not replace the local unittest command
-above. For local lint and formatting checks, install Ruff in your development
-environment and run it against the files you changed:
+GitHub Actions runs the offline unittest suite and checks lint and formatting
+for the test-support files. The Ruff jobs are deliberately scoped to test
+infrastructure; they do not claim that the legacy bot implementation is
+lint-clean. A green test job does not prove live site availability. For local
+lint and formatting checks, install Ruff in your development environment and
+run it against the files you changed:
 
 ```powershell
-ruff check FZBypass tests
-ruff format --check FZBypass tests
+ruff check tests/test_webshare.py tests/test_resolver_cassettes.py tests/resolver_cassette.py tests/live_mediafire.py
+ruff format --check tests/test_webshare.py tests/test_resolver_cassettes.py tests/resolver_cassette.py tests/live_mediafire.py
 ```
 
-Run the formatter without `--check` if you intend it to rewrite files. Review
-its diff before including the result; do not commit unrelated formatting or
-automated changes.
+These are the same scoped checks used by CI. You can also run Ruff against
+other files you changed, but the existing bot implementation has legacy lint
+and formatting findings outside this CI check. Run the formatter without
+`--check` only when you intend it to rewrite files. Review its diff before
+including the result; do not commit unrelated formatting or automated changes.
 
 ### Add an offline cassette test
 

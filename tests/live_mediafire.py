@@ -1,4 +1,5 @@
 """Manual, networked smoke check; intentionally excluded from unittest discovery."""
+
 import asyncio
 import sys
 

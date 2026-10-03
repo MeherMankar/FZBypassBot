@@ -1,4 +1,5 @@
 """Small offline replay helper for resolver HTTP flow fixtures."""
+
 import json
 from pathlib import Path
 from typing import Any
@@ -23,9 +24,7 @@ class ResolverCassette:
     async def post(self, url: str, **kwargs: Any) -> HTTPResponse:
         return self._replay("POST", url, kwargs)
 
-    def _replay(
-        self, method: str, url: str, kwargs: dict[str, Any]
-    ) -> HTTPResponse:
+    def _replay(self, method: str, url: str, kwargs: dict[str, Any]) -> HTTPResponse:
         if self._position >= len(self._exchanges):
             raise AssertionError(f"Unexpected {method} request: {url}")
 
