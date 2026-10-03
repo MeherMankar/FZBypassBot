@@ -1,0 +1,38 @@
+{
+  "resolver": "mediafire",
+  "fixture_kind": "synthetic offline example; replace with sanitized live captures",
+  "input_url": "https://www.mediafire.com/file/example/Example",
+  "expected_result": "https://download.example.invalid/example/file.zip",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://www.mediafire.com/file/example/Example"
+      },
+      "response": {
+        "status": 200,
+        "url": "https://www.mediafire.com/file/example/Example",
+        "headers": {
+          "content-type": "text/html"
+        },
+        "redirect_chain": [],
+        "body_text": "<html><title>MediaFire</title></html>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://www.mediafire.com/file/example/Example"
+      },
+      "response": {
+        "status": 200,
+        "url": "https://www.mediafire.com/file/example/Example",
+        "headers": {
+          "content-type": "text/html"
+        },
+        "redirect_chain": [],
+        "body_text": "<a id=\"downloadButton\" href=\"https://download.example.invalid/example/file.zip\">Download</a>"
+      }
+    }
+  ]
+}

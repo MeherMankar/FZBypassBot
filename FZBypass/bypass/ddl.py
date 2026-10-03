@@ -26,7 +26,7 @@ from curl_cffi.requests import Session as cSession
 from requests import Session  # synchronous — only used inside terabox WAP path
 
 from FZBypass import Config
-from FZBypass.core.exceptions import DDLException
+from FZBypass.core.exceptions import DDLException, ResolverStepError
 from FZBypass.core.networking import cf, http
 from FZBypass.core.networking.client import DEFAULT_TIMEOUT
 from FZBypass.core.networking.exceptions import NetworkError
@@ -99,11 +99,14 @@ async def mediafire(url: str) -> str:
         return m[0]
     try:
         r1 = await cf.get(url)
-        url = r1.url
+    except NetworkError as e:
+        raise ResolverStepError("MediaFire", "landing-page", type(e).__name__) from e
+    url = r1.url
+    try:
         r2 = await cf.get(url)
         page = r2.text
     except NetworkError as e:
-        raise DDLException(f"Mediafire: {type(e).__name__}") from e
+        raise ResolverStepError("MediaFire", "download-page", type(e).__name__) from e
 
     if m := _re.findall(r"'(https?://download\d+\.mediafire\.com/\S+/\S+/\S+)'", page):
         return m[0]
@@ -116,7 +119,9 @@ async def mediafire(url: str) -> str:
         return m[0]
     if m := _re.findall(r"//(www\.mediafire\.com/file/\S+/\S+/file\?\S+)", page):
         return await mediafire("https://" + m[0].strip('"'))
-    raise DDLException("Mediafire: no download links found in page")
+    raise ResolverStepError(
+        "MediaFire", "extract-download-link", "no download links found in page"
+    )
 
 
 async def shrdsk(url: str) -> str:

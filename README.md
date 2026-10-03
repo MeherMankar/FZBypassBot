@@ -11,6 +11,8 @@
 
 [**Demo Bot**](https://t.me/teradownr0bot) | [**Supported Sites**](#supported-sites) | [**Support**](https://t.me/meherpatil)
 
+[**Contributor guide**](CONTRIBUTING.md)
+
 </div>
 
 ---
@@ -31,85 +33,87 @@
 
 ## ***Supported Sites***
 
-> Last Updated: **02-10-2026**
+> Status snapshot updated: **02-10-2026**. Dates below reflect the repository's existing reports; they are not a guarantee of current live availability.
+
+> **Working** means a live check was reported successful on the date shown. **Broken** means a reproducible live failure is known. **Untested** means no recent live check is recorded. Offline fixture tests do not update live status.
 
 <details>
 <summary><b>Shortener Sites</b> — click to expand</summary>
 
 > All shorteners below use dedicated bypass functions. The old generic `transcript()` method (POST /links/go) is broken across the board as of 2026 due to CSRF/Cloudflare protection being added to all sites.
 
-| Shortener | Status | Last Tested |
-|:----------|:------:|:------------|
-| `aylink.co` · `ay.live` | ✅ | 30-09-2026 |
-| `appurl.io` | ✅ | Untested |
-| `bit.ly` · `tinyurl.com` · `shorturl.at` · `t.ly` | ✅ | 30-09-2026 |
-| `boost.ink` · `mboost.me` · `bst.gg` | ✅ | 30-09-2026 |
-| `cpmlink.co` · `cpmlink.pro` · `cpm.link` | ✅ | 30-09-2026 |
-| `direct-link.net` · `linkvertise.com` · `lootlinks.co` · `lootlabs.io` · `lv-linkvertise.com` | ✅ | 26-09-2026 |
-| `disk.yandex.ru` · `yandex.com` | ✅ | Untested |
-| `dropbox.com` | ✅ | Untested |
-| `earnlinks.in` | ✅ | 30-09-2026 |
-| `greenmotors.club` | ✅ | 26-09-2026 |
-| `gplinks.co` · `gplinks.in` | ✅ | 02-10-2026 |
-| `gyanilinks.com` · `gtlinks.me` | ✅ | Untested |
-| `justpaste.it` | ✅ | Untested |
-| `linksxyz.in` | ✅ | Untested |
-| `liteurl.in` · `mvurl.site` | ✅ | 30-09-2026 |
-| `mediafire.com` | ✅ | Untested |
-| `ouo.io` · `ouo.press` | ✅ | Untested |
-| `rslinks.net` | ✅ | Untested |
-| `shareus.io` · `shrs.link` | ✅ | Untested |
-| `shrdsk.me` | ✅ | Untested |
-| `shortxlinks.in` · `shortxlinks.com` | ✅ | 01-10-2026 |
-| `shrinkme.click` · `shrinkme.io` | ✅ | 30-09-2026 |
-| `srnky.com` · `clksz.com` · `oii.la` | ✅ | 01-10-2026 |
-| `surl.li` | ✅ | Untested |
-| `thinfi.com` | ✅ | Untested |
-| `try2link.com` | ✅ | Untested |
-| `vplink.in` · `vplinks.in` | ✅ | 02-10-2026 |
+| Shortener | Status | Last Verified |
+|:----------|:------:|:-------------:|
+| `aylink.co` · `ay.live` | Working | 30-09-2026 |
+| `appurl.io` | Untested | — |
+| `bit.ly` · `tinyurl.com` · `shorturl.at` · `t.ly` | Working | 30-09-2026 |
+| `boost.ink` · `mboost.me` · `bst.gg` | Working | 30-09-2026 |
+| `cpmlink.co` · `cpmlink.pro` · `cpm.link` | Working | 30-09-2026 |
+| `direct-link.net` · `linkvertise.com` · `lootlinks.co` · `lootlabs.io` · `lv-linkvertise.com` | Working | 26-09-2026 |
+| `disk.yandex.ru` · `yandex.com` | Untested | — |
+| `dropbox.com` | Untested | — |
+| `earnlinks.in` | Working | 30-09-2026 |
+| `greenmotors.club` | Working | 26-09-2026 |
+| `gplinks.co` · `gplinks.in` | Working | 02-10-2026 |
+| `gyanilinks.com` · `gtlinks.me` | Untested | — |
+| `justpaste.it` | Untested | — |
+| `linksxyz.in` | Untested | — |
+| `liteurl.in` · `mvurl.site` | Working | 30-09-2026 |
+| `mediafire.com` | Untested | — |
+| `ouo.io` · `ouo.press` | Untested | — |
+| `rslinks.net` | Untested | — |
+| `shareus.io` · `shrs.link` | Untested | — |
+| `shrdsk.me` | Untested | — |
+| `shortxlinks.in` · `shortxlinks.com` | Working | 01-10-2026 |
+| `shrinkme.click` · `shrinkme.io` | Working | 30-09-2026 |
+| `srnky.com` · `clksz.com` · `oii.la` | Working | 01-10-2026 |
+| `surl.li` | Untested | — |
+| `thinfi.com` | Untested | — |
+| `try2link.com` | Untested | — |
+| `vplink.in` · `vplinks.in` | Working | 02-10-2026 |
 
 </details>
 
 <details>
 <summary><b>File Hosters</b> — click to expand</summary>
 
-| Hoster | Status | Last Tested |
-|:-------|:------:|:------------|
-| `1fichier.com` | ✅ | Untested |
-| `drive.google.com` | ✅ | Untested |
-| `filecrypt.co` | ✅ | Untested |
-| `gofile.io` | ✅ | Untested |
-| `krakenfiles.com` | ✅ | Untested |
-| `mediafire.com` | ✅ | Untested |
-| `nexdrive.fit` | ✅ | 02-10-2026 |
-| `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | ✅ | Untested |
-| `pixeldrain.com` | ✅ | Untested |
-| `pornhub.com` | ✅ | 27-09-2026 |
-| `streamtape.com` | ✅ | Untested |
-| `terabox.*` (many domains) | ✅ | 27-09-2026 |
-| `we.tl` · `wetransfer.com` | ✅ | Untested |
-| `disk.yandex.ru` | ✅ | Untested |
+| Hoster | Status | Last Verified |
+|:-------|:------:|:-------------:|
+| `1fichier.com` | Untested | — |
+| `drive.google.com` | Untested | — |
+| `filecrypt.co` | Untested | — |
+| `gofile.io` | Untested | — |
+| `krakenfiles.com` | Untested | — |
+| `mediafire.com` | Untested | — |
+| `nexdrive.fit` | Working | 02-10-2026 |
+| `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | Untested | — |
+| `pixeldrain.com` | Untested | — |
+| `pornhub.com` | Working | 27-09-2026 |
+| `streamtape.com` | Untested | — |
+| `terabox.*` (many domains) | Working | 27-09-2026 |
+| `we.tl` · `wetransfer.com` | Untested | — |
+| `disk.yandex.ru` | Untested | — |
 
 </details>
 
 <details>
 <summary><b>DL Index / Scraper Sites</b> — click to expand</summary>
 
-| Site | Status | Last Tested |
-|:-----|:------:|:------------|
-| `4khdhub.one` | ✅ | 27-09-2026 |
-| `cinevood.*` | ✅ | Untested |
-| `archive.toonworld4all.me` | ✅ | 30-09-2026 |
-| `dotflix.store` · `dtflix.ink` | ✅ | 02-10-2026 |
-| `eonmovies.click` (`/dl/` · `/links/`) | ✅ | 02-10-2026 |
-| `azonahub.biz` (TOXcloud — `cloud.azonahub.biz` · `short.azonahub.biz`) | ✅ | 02-10-2026 |
-| `hblinks.lol` | ✅ | 27-09-2026 |
-| `hdhub4u.*` | ✅ | 27-09-2026 |
-| `kayoanime.com` | ✅ | Untested |
-| `skymovieshd.*` | ✅ | Untested |
-| `toonworld4all.*` | ✅ | Untested |
-| `sharespark.cfd` | ✅ | Untested |
-| `1tamilmv.*` | ✅ | Untested |
+| Site | Status | Last Verified |
+|:-----|:------:|:-------------:|
+| `4khdhub.one` | Working | 27-09-2026 |
+| `cinevood.*` | Untested | — |
+| `archive.toonworld4all.me` | Working | 30-09-2026 |
+| `dotflix.store` · `dtflix.ink` | Working | 02-10-2026 |
+| `eonmovies.click` (`/dl/` · `/links/`) | Working | 02-10-2026 |
+| `azonahub.biz` (TOXcloud — `cloud.azonahub.biz` · `short.azonahub.biz`) | Working | 02-10-2026 |
+| `hblinks.lol` | Working | 27-09-2026 |
+| `hdhub4u.*` | Working | 27-09-2026 |
+| `kayoanime.com` | Untested | — |
+| `skymovieshd.*` | Untested | — |
+| `toonworld4all.*` | Untested | — |
+| `sharespark.cfd` | Untested | — |
+| `1tamilmv.*` | Untested | — |
 
 </details>
 
@@ -117,19 +121,39 @@
 <details>
 <summary><b>GDrive / DDL Index Sites</b> — click to expand</summary>
 
-| Site | Status | Last Tested |
-|:-----|:------:|:------------|
-| `appdrive.*` · `filebee.*` | ✅ | 27-09-2026 |
-| `drivefire.co` | ✅ | 27-09-2026 |
-| `gdflix.*` | ✅ | 27-09-2026 |
-| `gdtot.cfd` | ✅ | Untested |
-| `filepress.store` · `pressbee.xyz` | ✅ | Untested |
-| `hubcloud.*` | ✅ | 30-09-2026 |
-| `hubdrive.*` | ✅ | 27-09-2026 |
-| `katdrive.org` | ✅ | Untested |
-| `sharer.pw` | ✅ | Untested |
+| Site | Status | Last Verified |
+|:-----|:------:|:-------------:|
+| `appdrive.*` · `filebee.*` | Working | 27-09-2026 |
+| `drivefire.co` | Working | 27-09-2026 |
+| `gdflix.*` | Working | 27-09-2026 |
+| `gdtot.cfd` | Untested | — |
+| `filepress.store` · `pressbee.xyz` | Untested | — |
+| `hubcloud.*` | Working | 30-09-2026 |
+| `hubdrive.*` | Working | 27-09-2026 |
+| `katdrive.org` | Untested | — |
+| `sharer.pw` | Untested | — |
 
 </details>
+
+---
+
+## ***Resolver Testing***
+
+Offline resolver regressions use recorded/sanitized HTTP fixtures and are safe
+for CI; they do not contact shortener sites. Run the unittest suite with:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+To check a resolver against a live link, run its separate manual smoke check.
+For example, see [the MediaFire live check](tests/live_mediafire.py). Live
+checks are intentionally excluded from CI because site behavior, rate limits,
+and network access change independently of the code. Fixture replay and the
+live status table answer different questions: passing replay means the code
+still handles the recorded flow, not that the live site still matches it.
+Contributor instructions for adding fixtures and running manual checks are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

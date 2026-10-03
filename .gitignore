@@ -167,3 +167,13 @@ _saved_vplink.py
 FZ.*
 
 /tests
+!/tests/
+/tests/*
+!/tests/test_resolver_cassettes.py
+!/tests/resolver_cassette.py
+!/tests/live_mediafire.py
+!/tests/fixtures/
+/tests/fixtures/*
+!/tests/fixtures/mediafire/
+/tests/fixtures/mediafire/*
+!/tests/fixtures/mediafire/basic.json
