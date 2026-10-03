@@ -23,6 +23,8 @@ try:
 except ImportError:
     config = None
 
+from FZBypass.core.webshare import webshare
+
 
 def conf(key, default=""):
     return getattr(config, key, None) or getenv(key, default)
@@ -56,13 +58,24 @@ class Config:
     GRABX_API_KEY = conf("GRABX_API_KEY")
     BYPASS_API_URL = conf("BYPASS_API_URL").rstrip("/")
     PEAK_API_KEY = conf("PEAK_API_KEY")  # Peak.fo API key for Turnstile solving
+    # Webshare proxy API manager
+    WEBSHARE_MANAGER = webshare
+
     # Comma-separated proxy URLs or host:port:user:pass entries
     _proxy_raw = conf("PROXY_URL").strip()
     PROXY_LIST: list[str] = [p.strip() for p in _proxy_raw.split(",") if p.strip()] if _proxy_raw else []
 
     @classmethod
     def next_proxy(cls) -> str | None:
-        """Return a random proxy URL from PROXY_LIST, or None if empty."""
+        """Return a random proxy URL.
+        1. If Webshare API keys are configured, randomly selects an API key
+           and a proxy from that API's pool.
+        2. Falls back to PROXY_LIST (from PROXY_URL) if Webshare has no proxies or is unconfigured.
+        """
+        if cls.WEBSHARE_MANAGER.has_keys():
+            proxy = cls.WEBSHARE_MANAGER.get_proxy()
+            if proxy:
+                return proxy
         if not cls.PROXY_LIST:
             return None
         import random as _random

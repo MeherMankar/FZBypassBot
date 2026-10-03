@@ -1,4 +1,4 @@
-﻿"""
+"""
 Bypass resolver functions — shortener / direct-link extraction.
 
 HTTP architecture
@@ -106,6 +106,13 @@ async def mediafire(url: str) -> str:
         raise DDLException(f"Mediafire: {type(e).__name__}") from e
 
     if m := _re.findall(r"'(https?://download\d+\.mediafire\.com/\S+/\S+/\S+)'", page):
+        return m[0]
+    # Newer Mediafire layout uses <a id="downloadButton" href="...">
+    soup_mf = BeautifulSoup(page, "html.parser")
+    dl_btn = soup_mf.find("a", {"id": "downloadButton"})
+    if dl_btn and dl_btn.get("href", "").startswith("http"):
+        return dl_btn["href"]
+    if m := _re.findall(r"(https?://download\d+\.mediafire\.com/[^\s\"'<>]+)", page):
         return m[0]
     if m := _re.findall(r"//(www\.mediafire\.com/file/\S+/\S+/file\?\S+)", page):
         return await mediafire("https://" + m[0].strip('"'))
@@ -362,54 +369,13 @@ async def terabox(url: str) -> list:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def try2link(url: str) -> str:
-    """Uses httpx — normal HTTP shortener with countdown form."""
-    DOMAIN = "https://try2link.com"
-    code = url.split("/")[-1]
-    referers = [
-        "https://hightrip.net/",
-        "https://to-travel.net",
-        "https://world2our.com/",
-    ]
-    html: str | None = None
-    for referer in referers:
-        try:
-            resp = await http.get(
-                f"{DOMAIN}/{code}",
-                headers={"Referer": referer, "User-Agent": _MOBILE_UA},
-                timeout=_SHORT_TIMEOUT,
-            )
-            if resp.status_code == 200:
-                html = resp.text
-                break
-        except NetworkError:
-            continue
-
-    if html is None:
-        raise DDLException("try2link: could not load page (all referers failed)")
-
-    soup = BeautifulSoup(html, "html.parser")
-    go_link = soup.find(id="go-link")
-    if not go_link:
-        raise DDLException("try2link: go-link form not found")
-    inputs = go_link.find_all(name="input")
-    data = {inp.get("name"): inp.get("value") for inp in inputs}
-    await asleep(6)
-    try:
-        resp2 = await http.post(
-            f"{DOMAIN}/links/go",
-            data=data,
-            headers={"X-Requested-With": "XMLHttpRequest", "User-Agent": _MOBILE_UA},
-            timeout=_SHORT_TIMEOUT,
-        )
-    except NetworkError as e:
-        raise DDLException(f"try2link: POST failed — {e}") from e
-
-    ct = resp2.headers.get("content-type", "")
-    if "application/json" in ct:
-        result = _json.loads(resp2.content)
-        if "url" in result:
-            return result["url"]
-    raise DDLException("try2link: no URL in response")
+    """
+    try2link.com — now a pure-JS SPA (React), not bypassable via HTTP.
+    Raises DDLException with a clear message.
+    """
+    raise DDLException(
+        "try2link: domain is dead — try2link.com is now a parked 'for sale' page"
+    )
 
 
 async def gyanilinks(url: str) -> str:
@@ -529,16 +495,90 @@ async def gplinks(url: str) -> str:
     gplinks.co / gplinks.in — adLinkFly go-link form bypass.
 
     Uses curl_cffi Chrome impersonation to pass Cloudflare TLS checks.
-    Reads counter_value from the page and waits the server-enforced timer
-    before POSTing to /links/go.
+
+    ── Flow (updated for GPlinks Flow / GPF plugin) ──────────────────────
+
+    gplinks.co now routes through an intermediary WordPress article page
+    (e.g. fakepe.com) using the GPlinks Flow (GPF) plugin, which gates
+    the link behind a multi-step ad-viewing countdown.
+
+    1. GET /alias               → subscription gate (gate-btn-skip link)
+    2. GET /alias?skip_sub=1   → redirects to intermediary article page
+       → Page embeds gpfConfig with rest endpoint + nonce + step count
+    3. POST wp-json/gpf/v1/advance (repeat per step, each waits ~30s)
+       → {status: "complete", url: "gplinks.co/alias?pid=...&vid=..."}
+    4. GET gplinks.co/alias?pid=...&vid=...
+       → page with hidden #go-link form (_method + _csrfToken)
+    5. POST /links/go  → JSON {url: destination}
+
+    Falls back to old direct go-link form approach for non-GPF pages.
     """
     import time as _time
+    import json as _json
     from urllib.parse import urljoin as _urljoin
 
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     )
+
+    def _post_go_link(sess, page_url: str, html: str, proxy: str | None = None) -> str:
+        """Submit the #go-link form from the final gplinks page and parse the response."""
+        soup = BeautifulSoup(html, "html.parser")
+        form = soup.select_one("form#go-link")
+        if form is None:
+            for candidate in soup.find_all("form"):
+                if "/links/go" in (candidate.get("action") or ""):
+                    form = candidate
+                    break
+        if form is None:
+            raise DDLException("gplinks: go-link form not found on final page")
+
+        form_data = {
+            inp.get("name"): inp.get("value", "")
+            for inp in form.find_all("input")
+            if inp.get("name")
+        }
+        action = _urljoin(page_url, form.get("action") or "/links/go")
+        if not action.startswith("http"):
+            action = "https://gplinks.co" + action
+
+        counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', html)
+        counter = int(counter_m.group(1)) if counter_m else 0
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        r2 = sess.post(
+            action,
+            data=form_data,
+            headers={
+                "Referer": page_url,
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Origin": "/".join(page_url.split("/")[:3]),
+            },
+            allow_redirects=False,
+            timeout=20,
+        )
+        loc = r2.headers.get("Location")
+        if loc:
+            return _urljoin(str(r2.url), loc)
+        try:
+            obj = _json.loads(r2.text)
+        except Exception:
+            raise DDLException(f"gplinks: unexpected go-link response — {r2.text[:200]}")
+
+        dest = obj.get("url") or obj.get("destination") or obj.get("link")
+        if isinstance(dest, str) and dest.startswith("http"):
+            return dest
+
+        message = str(obj.get("message", ""))
+        captcha_markers = ("captcha", "recaptcha", "turnstile")
+        if any(marker in message.lower() for marker in captcha_markers):
+            raise DDLException("gplinks: CAPTCHA verification required")
+        raise DDLException(f"gplinks: {message or 'link resolution failed'}")
+
 
     def _run_sync() -> str:
         proxy = Config.next_proxy()
@@ -552,74 +592,143 @@ async def gplinks(url: str) -> str:
             "Accept-Language": "en-US,en;q=0.9",
         })
 
-        r = sess.get(url, allow_redirects=True, timeout=20)
-        if r.status_code >= 400:
-            raise DDLException(f"gplinks: HTTP {r.status_code}")
+        # Step 1: visit alias page to seed session cookies
+        r0 = sess.get(url, allow_redirects=True, timeout=20)
+        if r0.status_code >= 400:
+            raise DDLException(f"gplinks: HTTP {r0.status_code}")
 
-        html = r.text
-        soup = BeautifulSoup(html, "html.parser")
+        html0 = r0.text
+        soup0 = BeautifulSoup(html0, "html.parser")
 
-        # Detect protected/subscription page
-        title = soup.title.get_text(" ", strip=True).lower() if soup.title else ""
+        title = soup0.title.get_text(" ", strip=True).lower() if soup0.title else ""
+        # Hard paywall: protected link with no skip available
         if any(m in title for m in ("protected link", "confirm subscription", "gplinks premium")):
             raise DDLException("gplinks: protected/subscription page — cannot bypass")
 
-        # Find go-link form
-        form = soup.select_one("form#go-link")
-        if form is None:
-            for candidate in soup.find_all("form"):
-                if "/links/go" in (candidate.get("action") or ""):
-                    form = candidate
-                    break
+        # Check for gate-btn-skip link (subscription gate with GPF behind it)
+        skip_link = soup0.select_one("a.gate-btn-skip")
+        skip_href = skip_link.get("href") if skip_link else None
 
-        if form is None:
-            # Check for plain redirect
-            loc = r.headers.get("Location")
+        # Only raise paywall error if there's no free skip available
+        if not skip_href and ("subscription/initiate" in html0 or "PLAN_ID" in html0):
+            raise DDLException("gplinks: link is behind a paid subscription — cannot bypass")
+
+        if not skip_href:
+            # No gate — try direct go-link form (non-GPF path)
+            form = soup0.select_one("form#go-link")
+            if form is None:
+                for candidate in soup0.find_all("form"):
+                    if "/links/go" in (candidate.get("action") or ""):
+                        form = candidate
+                        break
+            if form:
+                return _post_go_link(sess, str(r0.url), html0, proxy)
+            loc = r0.headers.get("Location")
             if loc:
-                return _urljoin(str(r.url), loc)
+                return _urljoin(str(r0.url), loc)
             raise DDLException("gplinks: go-link form not found on page")
 
-        data = {
-            inp.get("name"): inp.get("value", "")
-            for inp in form.find_all("input")
-            if inp.get("name")
-        }
-        action = _urljoin(str(r.url), form.get("action") or "/links/go")
-
-        # Server-side countdown
-        counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', html)
-        counter = int(counter_m.group(1)) if counter_m else 0
-        if counter > 0:
-            _time.sleep(counter + 1)
-
-        r2 = sess.post(
-            action,
-            data=data,
-            headers={
-                "Referer": str(r.url),
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-            },
-            allow_redirects=False,
+        # Step 2: GET skip_sub=1 → lands on GPF intermediary article page
+        skip_url = skip_href if skip_href.startswith("http") else _urljoin(str(r0.url), skip_href)
+        r1 = sess.get(
+            skip_url,
+            headers={"Referer": str(r0.url)},
+            allow_redirects=True,
             timeout=20,
         )
+        current_url = str(r1.url)
+        html = r1.text
 
-        # HTTP redirect response
-        loc = r2.headers.get("Location")
-        if loc:
-            return _urljoin(str(r2.url), loc)
+        m_cfg = _re.search(r"var gpfConfig = ({.*?});", html)
+        if not m_cfg:
+            # No GPF — try direct go-link
+            soup1 = BeautifulSoup(html, "html.parser")
+            form = soup1.select_one("form#go-link")
+            if form:
+                return _post_go_link(sess, current_url, html, proxy)
+            raise DDLException("gplinks: gpfConfig not found and no go-link form")
 
-        # JSON response
-        try:
-            obj = r2.json()
-        except Exception:
-            raise DDLException(f"gplinks: unexpected response — {r2.text[:200]}")
+        # Step 3: GPF advance loop
+        for _step in range(8):
+            m_cfg = _re.search(r"var gpfConfig = ({.*?});", html)
+            if not m_cfg:
+                soup_n = BeautifulSoup(html, "html.parser")
+                form = soup_n.select_one("form#go-link")
+                if form:
+                    return _post_go_link(sess, current_url, html, proxy)
+                raise DDLException("gplinks: GPF config disappeared without go-link form")
 
-        dest = obj.get("url") or obj.get("destination") or obj.get("link")
-        if isinstance(dest, str) and dest.startswith("http"):
-            return dest
+            try:
+                cfg = _json.loads(m_cfg.group(1))
+            except Exception:
+                raise DDLException("gplinks: could not parse gpfConfig JSON")
 
-        raise DDLException(f"gplinks: {obj.get('message', 'no destination in response')}")
+            rest = cfg.get("rest")
+            nonce = cfg.get("nonce")
+            if not rest or not nonce:
+                raise DDLException("gplinks: gpfConfig missing rest/nonce")
+
+            origin = "/".join(current_url.split("/")[:3])
+            adv_url = rest + "advance"
+            adv_headers = {
+                "User-Agent": _UA,
+                "Referer": current_url,
+                "Content-Type": "application/json",
+                "X-WP-Nonce": nonce,
+                "Origin": origin,
+            }
+
+            r_adv = sess.post(adv_url, headers=adv_headers, json={"imps": 1}, timeout=20)
+            try:
+                data = _json.loads(r_adv.text)
+            except Exception:
+                raise DDLException(f"gplinks: advance non-JSON — {r_adv.text[:100]}")
+
+            if data.get("status") in ("wait", "retry"):
+                wait_sec = int(
+                    data.get("seconds")
+                    or cfg.get("timing", {}).get("display_seconds")
+                    or 30
+                )
+                _time.sleep(wait_sec + 1)
+                r_adv = sess.post(adv_url, headers=adv_headers, json={"imps": 1}, timeout=20)
+                try:
+                    data = _json.loads(r_adv.text)
+                except Exception:
+                    raise DDLException(f"gplinks: advance retry non-JSON — {r_adv.text[:100]}")
+
+            status = data.get("status")
+            next_url = data.get("url")
+
+            if status == "complete" and next_url:
+                r_final = sess.get(
+                    next_url,
+                    headers={"User-Agent": _UA, "Referer": current_url},
+                    allow_redirects=True,
+                    timeout=20,
+                )
+                if "error_code=ip_changed" in str(r_final.url):
+                    raise DDLException(
+                        "gplinks: ip_changed error — proxy IP changed mid-session"
+                    )
+                return _post_go_link(sess, str(r_final.url), r_final.text, proxy)
+
+            if status == "next" and next_url:
+                r_next = sess.get(
+                    next_url,
+                    headers={"User-Agent": _UA, "Referer": current_url},
+                    allow_redirects=True,
+                    timeout=20,
+                )
+                current_url = str(r_next.url)
+                html = r_next.text
+                continue
+
+            raise DDLException(
+                f"gplinks: unexpected advance status '{status}' — {data.get('message', '')}"
+            )
+
+        raise DDLException("gplinks: exceeded maximum GPF step count")
 
     try:
         return await _to_thread(_run_sync)
@@ -692,17 +801,26 @@ async def transcript(url: str, DOMAIN: str, ref: str, sltime: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def justpaste(url: str) -> str:
-    """Uses cfscrape — justpaste.it actively blocks curl/httpx user-agents."""
+    """Uses curl_cffi — justpaste.it blocks cfscrape with NetworkConnectionError."""
+    def _run_sync() -> str:
+        sess = cSession(impersonate="chrome136")
+        try:
+            resp = sess.get(url, timeout=20)
+        except Exception as e:
+            raise DDLException(f"justpaste: {type(e).__name__}") from e
+        soup = BeautifulSoup(resp.text, "html.parser")
+        inps = soup.select('div[id="articleContent"] > p')
+        parts = [p.get_text() for p in inps if p.get_text()]
+        if not parts:
+            raise DDLException("justpaste: no content paragraphs found")
+        return ", ".join(parts)
+
     try:
-        resp = await cf.get(url)
-    except NetworkError as e:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
         raise DDLException(f"justpaste: {type(e).__name__}") from e
-    soup = BeautifulSoup(resp.text, "html.parser")
-    inps = soup.select('div[id="articleContent"] > p')
-    parts = [p.get_text() for p in inps if p.get_text()]
-    if not parts:
-        raise DDLException("justpaste: no content paragraphs found")
-    return ", ".join(parts)
 
 
 async def linksxyz(url: str) -> str:
@@ -1047,9 +1165,8 @@ async def vplink(url: str) -> str:
     def _run_sync() -> str:
         import cloudscraper as _cs
 
-        # vplink.in is behind Cloudflare JS challenge — cloudscraper handles it.
-        # On datacenter IPs (Render) Cloudflare blocks even cloudscraper;
-        # route through PROXY_URL if configured.
+        # vplink.in is behind Cloudflare — try without proxy first (works on
+        # residential IPs), fall back to proxy if CF blocks us.
         proxy = Config.next_proxy()
         proxies = None
         if proxy:
@@ -1064,15 +1181,37 @@ async def vplink(url: str) -> str:
                     proxy_url = f"http://{proxy}"
                 proxies = {"http": proxy_url, "https": proxy_url}
 
-        sess = _cs.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-        if proxies:
-            sess.proxies.update(proxies)
-        sess.headers.update({"User-Agent": _UA})
+        def _make_sess(use_proxy: bool):
+            s = _cs.create_scraper(
+                browser={"browser": "chrome", "platform": "windows", "mobile": False}
+            )
+            if use_proxy and proxies:
+                s.proxies.update(proxies)
+            s.headers.update({"User-Agent": _UA})
+            return s
 
-        # ── Step 1: GET vplink page → set ref+AppSession cookies ──────────────
-        r1 = sess.get(url, timeout=15, allow_redirects=True)
+        # Try without proxy first, then with proxy
+        sess = None
+        r1 = None
+        for use_proxy in (False, True):
+            if use_proxy and not proxies:
+                break
+            try:
+                _sess = _make_sess(use_proxy)
+                _r1 = _sess.get(url, timeout=30, allow_redirects=True)
+                # Check if we got the real page (has techmint link) vs CF challenge
+                if "techmint.in" in _r1.text or "Please Wait" in _r1.text:
+                    sess = _sess
+                    r1 = _r1
+                    break
+            except Exception:
+                continue
+
+        if r1 is None:
+            # Last resort: just use whatever we get without proxy
+            sess = _make_sess(False)
+            r1 = sess.get(url, timeout=30, allow_redirects=True)
+
         if r1.status_code != 200:
             raise DDLException(f"vplink: HTTP {r1.status_code}")
 
@@ -1453,6 +1592,9 @@ async def fichier(url: str) -> str:
     if "::" in url:
         url, pswd = url.rsplit("::", 1)
 
+    # Strip affiliate/referral params (&af=, &aff=) — they redirect to homepage
+    url = _re.sub(r'&af=[^&]+', '', url).rstrip('&')
+
     # Validate URL shape
     if not _re.match(r"^https?://.*1fichier\.com/\?.+", url):
         raise DDLException("1fichier: invalid URL format")
@@ -1498,6 +1640,11 @@ async def streamtape(url: str) -> str:
       document.getElementById('robotlink').innerHTML = '/get_video?...' + ('...')
     We regex-extract the two string fragments and assemble the URL.
     """
+    # Fast path: already a direct CDN URL (/get_video?id=...)
+    if "/get_video?" in url:
+        if not url.startswith("http"):
+            url = f"https://streamtape.com{url}"
+        return url
     try:
         resp = await http.get(url, timeout=_SHORT_TIMEOUT)
         resp.raise_for_status()
@@ -2567,7 +2714,7 @@ async def srnky(url: str) -> str:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     )
-    _SITEKEY = "0x4AAAAAABpMIvjgfpDTfgEj"
+    _SITEKEY_FALLBACK = "0x4AAAAAABpMIvjgfpDTfgEj"
 
     if not Config.PEAK_API_KEY:
         raise DDLException(
@@ -2586,8 +2733,14 @@ async def srnky(url: str) -> str:
         return None
 
     def _run_sync() -> str:
+        from urllib.parse import urlparse as _urlparse
         sess = _requests.Session()
         sess.headers.update({"User-Agent": _UA})
+
+        # Derive host/origin from input URL (e.g. https://clksz.com or https://srnky.com)
+        _parsed = _urlparse(url)
+        _base_url = f"{_parsed.scheme}://{_parsed.netloc}"  # e.g. https://clksz.com
+        _host = _parsed.netloc  # e.g. clksz.com
 
         # ── Step 1: GET alias page ────────────────────────────────────────────
         r1 = sess.get(url, timeout=20)
@@ -2609,41 +2762,72 @@ async def srnky(url: str) -> str:
             raise DDLException(f"srnky: could not extract token from {url}")
 
         # ── Step 2: Solve Turnstile via Peak API ──────────────────────────────
-        proxy = Config.next_proxy()
-        peak_payload: dict = {
-            "task_type": "turnstiletask",
-            "url": url,
-            "sitekey": _SITEKEY,
-        }
-        if proxy:
-            peak_payload["proxy"] = proxy
+        # Extract sitekey dynamically — each domain uses a different key
+        sitekey_m = _re2.search(r'(0x4[A-Za-z0-9]{20,})', html)
+        sitekey = sitekey_m.group(1) if sitekey_m else _SITEKEY_FALLBACK
 
-        peak_r = _requests.post(
-            "https://api.peak.fo/solve",
-            headers={"X-API-Key": Config.PEAK_API_KEY},
-            json=peak_payload,
-            timeout=60,
-        )
-        peak_resp = peak_r.json()
-        if not peak_resp.get("success"):
-            raise DDLException(
-                f"srnky: Turnstile solve failed — {peak_resp.get('error', peak_resp)}"
+        proxy = Config.next_proxy()
+
+        def _peak_solve(use_proxy: bool) -> dict:
+            # Peak requires URL to end with a trailing slash
+            _solve_url = url if url.endswith("/") else url + "/"
+            if use_proxy:
+                payload: dict = {
+                    "task_type": "turnstiletask",
+                    "url": _solve_url,
+                    "sitekey": sitekey,
+                    "proxy": proxy,
+                }
+            else:
+                payload = {
+                    "task_type": "TurnstileTaskProxyLess",
+                    "url": _solve_url,
+                    "sitekey": sitekey,
+                }
+            r = _requests.post(
+                "https://api.peak.fo/solve",
+                headers={"X-API-Key": Config.PEAK_API_KEY},
+                json=payload,
+                timeout=60,
             )
+            return r.json()
+
+        # Try proxyless first (Peak's own IPs are cleaner than shared datacenter IPs).
+        # Note: proxyless tokens are accepted from any IP, so no session binding needed.
+        # If that fails, retry with a Webshare proxy.
+        peak_resp = _peak_solve(use_proxy=False)
+        if not peak_resp.get("success"):
+            _err1 = peak_resp.get("error", "")
+            if proxy:
+                peak_resp = _peak_solve(use_proxy=True)
+                if not peak_resp.get("success"):
+                    raise DDLException(
+                        f"srnky: Turnstile solve failed — {peak_resp.get('error', peak_resp)} "
+                        f"(proxyless error: {_err1})"
+                    )
+                proxy_used = proxy
+            else:
+                raise DDLException(
+                    f"srnky: Turnstile solve failed (proxyless) — {_err1}"
+                )
+        else:
+            proxy_used = None  # Proxyless solve; no IP binding required
+
         ts_token = peak_resp["data"]["token"]
 
         # Bind subsequent requests to the same proxy IP that was used for Turnstile
         # so the solved token is valid for the downstream requests.
-        if proxy:
+        if proxy_used:
             # Convert compact host:port:user:pass or URL format to requests proxy dict
-            if proxy.startswith("http"):
-                proxy_dict = {"http": proxy, "https": proxy}
+            if proxy_used.startswith("http"):
+                proxy_dict = {"http": proxy_used, "https": proxy_used}
             else:
-                parts = proxy.split(":")
+                parts = proxy_used.split(":")
                 if len(parts) == 4:
                     h, p, u, pw = parts
                     proxy_url = f"http://{u}:{pw}@{h}:{p}"
                 else:
-                    proxy_url = f"http://{proxy}"
+                    proxy_url = f"http://{proxy_used}"
                 proxy_dict = {"http": proxy_url, "https": proxy_url}
             sess.proxies.update(proxy_dict)
 
@@ -2662,7 +2846,7 @@ async def srnky(url: str) -> str:
                 "submit": "",
                 "cf-turnstile-response": ts_token,
             },
-            headers={"Origin": "https://srnky.com", "Referer": url},
+            headers={"Origin": _base_url, "Referer": url},
             timeout=20,
             allow_redirects=False,
         )
@@ -2701,7 +2885,7 @@ async def srnky(url: str) -> str:
                 "c_t": lb_time,
                 "alias": lb_alias,
                 "next_page": lb_base,
-                "url": f"srnky.com/{lb_alias}",
+                "url": f"{_host}/{lb_alias}",
             },
             headers={"Origin": "https://loanbixby.com", "Referer": lb_base},
             timeout=20,
@@ -2716,7 +2900,7 @@ async def srnky(url: str) -> str:
                 "c_d": lb_date,
                 "c_t": lb_time,
                 "alias": lb_alias,
-                "url": f"srnky.com/{lb_alias}",
+                "url": f"{_host}/{lb_alias}",
             },
             headers={
                 "Origin": "https://loanbixby.com",

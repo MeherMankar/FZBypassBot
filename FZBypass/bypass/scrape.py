@@ -139,13 +139,27 @@ async def skymovieshd(url: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def cinevood(url: str) -> str:
-    """Uses cfscrape — cinevood has Cloudflare protection."""
+    """Uses cloudscraper — cinevood has Cloudflare protection."""
+    import cloudscraper as _cs
+    import asyncio as _asyncio
+
+    def _fetch() -> str:
+        sess = _cs.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+        r = sess.get(url, timeout=20)
+        if r.status_code != 200:
+            raise DDLException(f"Cinevood: HTTP {r.status_code}")
+        return r.text
+
     try:
-        resp = await cf.get(url)
-    except NetworkError as e:
+        html = await _asyncio.to_thread(_fetch)
+    except DDLException:
+        raise
+    except Exception as e:
         raise DDLException(f"Cinevood: {type(e).__name__}") from e
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     titles = soup.select("h6")
     post_title = soup.title.string.strip() if soup.title else "Unknown"
 

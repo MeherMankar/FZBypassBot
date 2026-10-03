@@ -33,7 +33,7 @@ class Health(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._head()
-        self.wfile.write(b"FZ Bypass Bot is alive")
+        self.wfile.write(b"t.me/meherpatil")
 
     def log_message(self, *args):
         pass
@@ -97,6 +97,7 @@ async def main():
     _cleanup_session_files()
     Thread(target=serve_health, daemon=True).start()
     asyncio.create_task(_keep_alive())
+    Config.WEBSHARE_MANAGER.start_background_refresher()
     while True:
         try:
             await Bypass.start()
@@ -114,6 +115,7 @@ async def main():
     LOGGER.info("FZ Bot Started!")
     await notify_restart()
     await idle()
+    Config.WEBSHARE_MANAGER.stop_background_refresher()
     await Bypass.stop()
 
 

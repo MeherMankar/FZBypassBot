@@ -37,7 +37,7 @@ def bot_stats():
     cpu = cpu_percent(interval=0.5)
     cores = cpu_count(logical=True) or 0
     p_cores = cpu_count(logical=False) or 0
-    return f"""⌬ <b><i>BOT STATISTICS :</i></b>
+    msg = f"""⌬ <b><i>BOT STATISTICS :</i></b>
 ┖ <b>Bot Uptime :</b> {convert_time(time() - BOT_START)}
 
 ┎ <b><i>BOT RAM :</i></b>
@@ -59,6 +59,13 @@ def bot_stats():
 ┎ <b><i>DISK :</i></b>
 ┃ {progress_bar(disk)} {disk}%
 ┖ <b>U :</b> {get_readable_size(used)} | <b>F :</b> {get_readable_size(free)} | <b>T :</b> {get_readable_size(total)}"""
+
+    ws_stats = Config.WEBSHARE_MANAGER.stats()
+    if ws_stats["total_keys"] > 0:
+        msg += f"""\n\n┎ <b><i>WEBSHARE PROXIES :</i></b>
+┠ <b>APIs Active :</b> {ws_stats['active_keys']} / {ws_stats['total_keys']}
+┖ <b>Total Proxies :</b> {ws_stats['total_proxies']}"""
+    return msg
 
 
 @Bypass.on_message(

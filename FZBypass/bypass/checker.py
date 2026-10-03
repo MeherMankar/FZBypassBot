@@ -74,6 +74,13 @@ async def direct_link_checker(link, onlylink=False):
         return await pornhub(link)
     elif bool(match(r"https?:\/\/(www\.)?pixeldrain\.com\/(u|l)\/\S+", link)):
         return await pixeldrain(link)
+    elif bool(match(r"https?:\/\/cdn\.pixeldrain\.\S+\/[a-zA-Z0-9]+", link)):
+        # cdn.pixeldrain.eu.cc/<id> — already a direct CDN URL, extract ID and return direct link
+        _pd_id = link.rstrip("/").split("/")[-1].split("?")[0]
+        return f"https://pixeldrain.com/api/file/{_pd_id}?download"
+    elif bool(match(r"https?:\/\/clk\.sh\S+", link)):
+        # clk.sh redirects to clksz.com — follow it first
+        blink = await shorter(link)
     elif bool(match(r"https?:\/\/(www\.)?gofile\.io\/(d|download)\/\S+", link)):
         return await gofile(link)
     elif bool(match(r"https?:\/\/(1drv\.ms|onedrive\.live\.com|sharepoint\.com)\S+", link)):
@@ -134,7 +141,7 @@ async def direct_link_checker(link, onlylink=False):
         return await streamtape(link)
     elif bool(match(r"https?:\/\/(wetransfer\.com|we\.tl)\S+", link)):
         return await wetransfer(link)
-    elif bool(match(r"https?:\/\/(www\.)?filecrypt\.co\S+", link)):
+    elif bool(match(r"https?:\/\/(www\.)?filecrypt\.(co|cc)\S+", link)):
         return await filecrypt(link)
     elif bool(match(r"https?:\/\/(www\.)?krakenfiles\.com\S+", link)):
         return await krakenfiles(link)
@@ -156,9 +163,8 @@ async def direct_link_checker(link, onlylink=False):
         return await nexdrive(link)
     elif bool(match(r"https?:\/\/(www\.)?hblinks\.lol\S+", link)):
         return await hblinks(link)
-    elif bool(match(r"https?:\/\/cinevood\.\S+", link)):
+    elif bool(match(r"https?:\/\/(.+\.)?cinevood\.\S+", link)):
         return await cinevood(link)
-
     elif bool(match(r"https?:\/\/.+\.hdhub4u\.\S+|https?:\/\/hdhub4u\.\S+", link)):
         return await hdhub4u(link)
 
@@ -171,7 +177,7 @@ async def direct_link_checker(link, onlylink=False):
         return await kayoanime(link)
     elif bool(match(r"https?:\/\/toonworld4all\.\S+", link)):
         return await toonworld4all(link)
-    elif bool(match(r"https?:\/\/archive\.toonworld4all\.\S+\/redirect\/\S+", link)):
+    elif bool(match(r"https?:\/\/archive\.toonworld4all\.\S+\/(redirect|verify)\/\S+", link)):
         return await tw4all_redirect(link)
     elif bool(match(r"https?:\/\/skymovieshd\.\S+", link)):
         return await skymovieshd(link)

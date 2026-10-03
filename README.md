@@ -155,9 +155,34 @@ Most shorteners gate the destination URL behind one of a few patterns. Each has 
 
 ## ***Proxy Setup***
 
-Some sites (e.g. `shrinkme.click`) block datacenter IPs via Cloudflare. Set `PROXY_URL` on Render to use residential proxies:
+Some sites (e.g. `shrinkme.click`, `ouo.press`) block datacenter IPs via Cloudflare. You can configure proxies either directly via **Webshare Proxy API** (recommended) or via a manual **`PROXY_URL`** list.
 
+### 1. Webshare Proxy API (Auto-fetch & Multi-API Rotation)
+Supports one or multiple Webshare API tokens (`api1, api2, api3, ...`).
+The bot automatically and randomly chooses an API key, fetches its proxies, and randomly selects a proxy from that API's pool. Proxies are cached in memory and refreshed automatically in the background.
+
+```env
+# Comma-separated list of Webshare API keys:
+WEBSHARE_API_KEY=key1,key2,key3,key4
+# OR
+WEBSHARE_API_KEYS=key1,key2,key3,key4
+
+# Or individual numbered variables:
+WEBSHARE_API_KEY_1=key1
+WEBSHARE_API_KEY_2=key2
+WEBSHARE_API_KEY_3=key3
+
+# Optional: mode ("direct" [default] or "backbone")
+WEBSHARE_MODE=direct
+
+# Optional: cache refresh interval in seconds (default: 1800, i.e. 30 minutes)
+WEBSHARE_REFRESH_INTERVAL=1800
 ```
+
+### 2. Manual Proxy List (`PROXY_URL`)
+If not using Webshare, or as a fallback:
+
+```env
 PROXY_URL=host:port:user:pass,host:port:user:pass,...
 ```
 
@@ -243,6 +268,7 @@ Copy `sample_config.env` → `config.env` and fill in:
 | `TERABOX_API_URL` | ➖ | terabox-downloader-api URL (fallback) |
 | `TERA_COOKIE` | ➖ | Terabox `ndus` cookie (last resort) |
 | `PEAK_API_KEY` | ➖ | Peak.fo key for Turnstile shorteners — [Setup ↗](#peak-setup-turnstile-shorteners) |
+| `WEBSHARE_API_KEY` / `WEBSHARE_API_KEYS` | ➖ | Webshare proxy API token(s) (supports multiple APIs) — [Setup ↗](#1-webshare-proxy-api-auto-fetch--multi-api-rotation) |
 | `PROXY_URL` | ➖ | Comma-separated residential proxies — [Setup ↗](#proxy-setup) |
 | `GDTOT_CRYPT` | ➖ | GdToT cookie |
 | `KATDRIVE_CRYPT` | ➖ | KatDrive cookie |
