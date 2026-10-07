@@ -1981,7 +1981,6 @@ async def arolinks(url: str) -> str:
 
     def _run_sync() -> str:
         import requests as _req
-        import cloudscraper as _cs
 
         # Use plain requests for the chain (no CF challenges on techmint/onlinewish)
         s = _req.Session()
@@ -2038,12 +2037,11 @@ async def arolinks(url: str) -> str:
         s.get("https://onlinewish.in/readmore/",
               headers={"Referer": ow_art or ow1}, timeout=15)
 
-        # Step 7: hit arolinks with onlinewish.in referer via cloudscraper
-        # (CF challenge requires browser-like TLS fingerprint)
-        sess = _cs.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-        # Transfer arolinks cookies to cloudscraper session
+        # Step 7: hit arolinks with onlinewish.in referer via curl_cffi
+        # (CF bot-score check requires a real Chrome TLS fingerprint)
+        from curl_cffi.requests import Session as _CurlSess2
+        sess = _CurlSess2(impersonate="chrome136")
+        # Transfer arolinks cookies from the requests session
         for cookie in s.cookies:
             if "arolinks" in (cookie.domain or ""):
                 sess.cookies.set(cookie.name, cookie.value, domain=cookie.domain)

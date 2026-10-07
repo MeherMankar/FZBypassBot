@@ -1,7 +1,5 @@
 aiohttp
 bs4
-cfscrape
-cloudscraper
 cloudscraper-turnstile
 curl_cffi
 httpx
@@ -9,5 +7,6 @@ lxml
 psutil
 requests
 urllib3>=2.0
-uvloop
+uvloop; sys_platform != "win32"
+wreq
 wzgram[fast]
