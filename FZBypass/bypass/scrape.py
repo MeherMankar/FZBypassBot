@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
+from FZBypass import Config
 from FZBypass.bypass.ddl import transcript
 from FZBypass.core.exceptions import DDLException
 from FZBypass.core.networking import cf, http
@@ -627,6 +628,108 @@ async def katlinks(url: str) -> str:
     return "\n".join(lines)
 
 
+async def gettolink(url: str) -> str:
+    """Resolve Get-To's Cloudflare-gated continuation page and list its mirrors."""
+    if not Config.PEAK_API_KEY:
+        raise DDLException("Get-To: PEAK_API_KEY is required for Cloudflare solving")
+    proxy = Config.next_proxy()
+    if not proxy:
+        raise DDLException("Get-To: a configured proxy is required")
+
+    def _fetch() -> str:
+        import cloudscraper_turnstile
+
+        session = cloudscraper_turnstile.create_scraper(
+            api_key=Config.PEAK_API_KEY,
+            proxy=proxy,
+        )
+        session.peak_proxy = proxy
+        session.proxies.update({"http": proxy, "https": proxy})
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/136.0.0.0 Safari/537.36"
+                )
+            }
+        )
+        try:
+            response = session.get(url, timeout=90)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            form = soup.select_one("form#query_form")
+            challenge = soup.select_one('a[href*="/cdn-cgi/content"]')
+            title_slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+            if form and challenge:
+                downid = form.select_one('input[name="downid"]')
+                if downid and downid.get("value"):
+                    title_slug = urlparse(downid["value"]).path.rstrip("/").rsplit(
+                        "/", 1
+                    )[-1]
+                session.get(
+                    challenge["href"],
+                    headers={"Referer": url},
+                    timeout=90,
+                ).raise_for_status()
+                action = form.get("action")
+                if not action:
+                    raise DDLException("Get-To: continuation form action missing")
+                data = {
+                    field.get("name"): field.get("value", "")
+                    for field in form.select("input[name]")
+                }
+                response = session.post(
+                    action,
+                    data=data,
+                    headers={"Referer": url},
+                    timeout=90,
+                )
+                response.raise_for_status()
+
+            page = BeautifulSoup(response.text, "html.parser")
+            content = (
+                page.select_one(".entry-content")
+                or page.select_one("article")
+                or page.select_one("main")
+                or page
+            )
+
+            title = sub(r"-\d+$", "", title_slug).replace("-", " ").title()
+            links: list[tuple[str, str]] = []
+            seen: set[str] = set()
+            containers = [content] if content is page else [content, page]
+            for container in containers:
+                for anchor in container.find_all("a", href=True):
+                    href = anchor["href"].strip()
+                    host = (urlparse(href).hostname or "").lower()
+                    if (
+                        href.startswith(("http://", "https://"))
+                        and host not in {"get-to.link", "www.get-to.link"}
+                        and href not in seen
+                    ):
+                        seen.add(href)
+                        label = anchor.get_text(" ", strip=True) or host
+                        links.append((label, href))
+                if links:
+                    break
+
+            if not links:
+                raise DDLException("Get-To: no external download mirrors found")
+
+            lines = [f"<b>🎬 {title}</b>", "", "<b>Download Links</b>"]
+            lines.extend(
+                f'<a href="{href}">{label}</a>' for label, href in links
+            )
+            return "\n".join(lines)
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"Get-To: {type(e).__name__}") from e
+
+    return await asyncio.to_thread(_fetch)
+
+
 async def bollyflix(url: str) -> str:
     """
     Scrape Bollyflix movie/series pages for supported DDL mirror links.
@@ -975,6 +1078,176 @@ async def fourkhdhub(url: str) -> str:
         out += line + "\n"
 
     return out
+
+
+async def hindianimeszone(url: str) -> str:
+    """Solve the download page's Turnstile gate and list its server mirrors."""
+    from html import escape
+    from requests import Session
+
+    if not Config.PEAK_API_KEY:
+        raise DDLException(
+            "HindiAnimesZone: PEAK_API_KEY is required for Turnstile solving"
+        )
+
+    def _format_options(soup: BeautifulSoup) -> str | None:
+        title = (
+            soup.select_one(".download-title, h1, h2")
+            or soup.title
+        )
+        title_text = title.get_text(" ", strip=True) if title else "Download options"
+
+        quality_cards = soup.select(".quality-card")
+        groups: list[tuple[str, list[tuple[str, str]]]] = []
+        seen: set[str] = set()
+        for card in quality_cards:
+            quality_title = card.select_one(".quality-title")
+            quality = (
+                quality_title.get_text(" ", strip=True)
+                if quality_title
+                else "Download"
+            )
+            mirrors: list[tuple[str, str]] = []
+            for anchor in card.select("a.server-btn[href]"):
+                href = anchor["href"].strip()
+                if href.startswith(("http://", "https://")) and href not in seen:
+                    seen.add(href)
+                    label = anchor.get("data-label") or anchor.get_text(
+                        " ", strip=True
+                    )
+                    mirrors.append(
+                        (label or urlparse(href).hostname or "Mirror", href)
+                    )
+            if mirrors:
+                groups.append((quality, mirrors))
+
+        if not groups:
+            mirrors = []
+            for anchor in soup.select("a.server-btn[href]"):
+                href = anchor["href"].strip()
+                if href.startswith(("http://", "https://")) and href not in seen:
+                    seen.add(href)
+                    label = anchor.get("data-label") or anchor.get_text(
+                        " ", strip=True
+                    )
+                    mirrors.append(
+                        (label or urlparse(href).hostname or "Mirror", href)
+                    )
+            if mirrors:
+                groups.append(("Download Links", mirrors))
+
+        if not groups:
+            return None
+
+        lines = [f"<b>{escape(title_text)}</b>"]
+        for quality, mirrors in groups:
+            lines.extend(("", f"<b>Quality: {escape(quality)}</b>"))
+            lines.append(
+                " | ".join(
+                    f'<b><a href="{escape(href, quote=True)}">'
+                    f'{escape(label)}</a></b>'
+                    for label, href in mirrors
+                )
+            )
+        return "\n".join(lines)
+
+    def _fetch() -> str:
+        last_layout = "unknown response"
+        for _ in range(3):
+            proxy = Config.next_proxy()
+            if not proxy:
+                raise DDLException(
+                    "HindiAnimesZone: a configured proxy is required"
+                )
+            session = Session()
+            session.proxies.update({"http": proxy, "https": proxy})
+            session.headers.update(
+                {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/136.0.0.0 Safari/537.36"
+                    )
+                }
+            )
+            try:
+                page = session.get(url, timeout=35)
+                page.raise_for_status()
+                soup = BeautifulSoup(page.text, "html.parser")
+                form = soup.select_one("form#captchaForm")
+                widget = soup.select_one(".cf-turnstile[data-sitekey]")
+                if not form or not widget:
+                    options = _format_options(soup)
+                    if options:
+                        return options
+                    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+                    last_layout = (
+                        f"title={title!r}, form={bool(form)}, "
+                        f"turnstile={bool(widget)}"
+                    )
+                    continue
+
+                response = session.post(
+                    "https://api.peak.fo/solve",
+                    headers={"X-API-Key": Config.PEAK_API_KEY},
+                    json={
+                        "task_type": "turnstiletask",
+                        "url": page.url,
+                        "sitekey": widget["data-sitekey"],
+                        "proxy": proxy,
+                    },
+                    timeout=90,
+                )
+                response.raise_for_status()
+                solved = response.json()
+                token = (solved.get("data") or {}).get("token")
+                if not solved.get("success") or not token:
+                    raise DDLException(
+                        "HindiAnimesZone: Turnstile solve failed — "
+                        f"{solved.get('error', 'token missing')}"
+                    )
+
+                fields = {
+                    field.get("name"): field.get("value", "")
+                    for field in form.select("input[name]")
+                }
+                fields["cf-turnstile-response"] = token
+                result = session.post(
+                    page.url,
+                    data=fields,
+                    headers={
+                        "Referer": page.url,
+                        "Origin": (
+                            f"{urlparse(page.url).scheme}://"
+                            f"{urlparse(page.url).netloc}"
+                        ),
+                    },
+                    timeout=35,
+                )
+                result.raise_for_status()
+                result_soup = BeautifulSoup(result.text, "html.parser")
+                options = _format_options(result_soup)
+                if not options:
+                    raise DDLException(
+                        "HindiAnimesZone: no server mirror links found "
+                        "after verification"
+                    )
+                return options
+            except DDLException:
+                raise
+            except Exception as e:
+                raise DDLException(
+                    f"HindiAnimesZone: {type(e).__name__}"
+                ) from e
+            finally:
+                session.close()
+
+        raise DDLException(
+            f"HindiAnimesZone: Turnstile form not found after 3 attempts "
+            f"({last_layout})"
+        )
+
+    return await asyncio.to_thread(_fetch)
 
 
 async def hblinks(url: str) -> list:

@@ -11,7 +11,7 @@
 
 [**Demo Bot**](https://t.me/teradownr0bot) | [**Supported Sites**](#supported-sites) | [**Support**](https://t.me/meherpatil)
 
-[**Contributor guide**](CONTRIBUTING.md)
+[**Contributor guide**](CONTRIBUTING.md) | [**Resolver flows**](RESOLVERS.md)
 
 </div>
 
@@ -34,9 +34,11 @@
 
 ## ***Supported Sites***
 
-> Status snapshot updated: **02-10-2026**. Dates below reflect the repository's existing reports; they are not a guarantee of current live availability.
+> Status snapshot updated: **07-10-2026**. Dates below reflect the repository's existing reports; they are not a guarantee of current live availability.
 
 > **Working** means a live check was reported successful on the date shown. **Broken** means a reproducible live failure is known. **Untested** means no recent live check is recorded. Offline fixture tests do not update live status.
+
+Provider matching is suffix-agnostic for supported branded hostnames: changing a provider's TLD (including multi-label suffixes) does not require a new route, and resolvers use the input hostname when the provider flow supports it. Integrations with canonical API or alias hosts continue to use those provider-specific endpoints; recognizing a hostname variant does not guarantee that the remote service has deployed that variant.
 
 <details>
 <summary><b>Shortener Sites</b> — click to expand</summary>
@@ -58,10 +60,11 @@
 | `gplinks.co` · `gplinks.in` | Working | 02-10-2026 |
 | `gyanilinks.com` · `gtlinks.me` | Untested | — |
 | `justpaste.it` | Untested | — |
+| `just2earn.com` | Resolver added; live request blocked by Cloudflare, flow unverified | 07-10-2026 |
 | `linksxyz.in` | Untested | — |
 | `liteurl.in` · `mvurl.site` | Working | 30-09-2026 |
 | `mediafire.com` | Untested | — |
-| `ouo.io` · `ouo.press` | Untested | — |
+| `ouo.io` · `ouo.press` | Working (resolves supplied OuO URL to Get-To) | 07-10-2026 |
 | `rslinks.net` | Untested | — |
 | `shareus.io` · `shrs.link` | Untested | — |
 | `shrdsk.me` | Untested | — |
@@ -73,6 +76,9 @@
 | `try2link.com` | Untested | — |
 | `vplink.in` · `vplinks.in` | Working | 02-10-2026 |
 | `arolinks.com` | Working (partner-chain resolver; Telegram deep links) | 07-10-2026 |
+| `antibypass.koyeb.app` | Working (JS `finalUrl` extraction via vplink.in referer) | 07-10-2026 |
+| `exeygo.com` | Partial (CakePHP adLinkFly; Turnstile POST returns 500 — not fully bypassable) | 07-10-2026 |
+| `get-to.link` | Working (Peak-backed Cloudflare continuation + download mirrors) | 07-10-2026 |
 
 </details>
 
@@ -89,7 +95,7 @@
 | `mediafire.com` | Untested | — |
 | `nexdrive.fit` | Working | 02-10-2026 |
 | `onedrive.live.com` · `1drv.ms` · `sharepoint.com` | Untested | — |
-| `pixeldrain.com` | Untested | — |
+| `pixeldrain.*` (any valid DNS suffix) | Working (API metadata validation + direct download URL) | 07-10-2026 |
 | `pornhub.com` | Working | 27-09-2026 |
 | `streamtape.com` | Untested | — |
 | `terabox.*` (many domains) | Working | 27-09-2026 |
@@ -128,6 +134,7 @@
 | `azonahub.biz` (TOXcloud — `cloud.azonahub.biz` · `short.azonahub.biz`) | Working | 02-10-2026 |
 | `hblinks.lol` | Working | 27-09-2026 |
 | `hdhub4u.*` | Working (new1 timeout fallback to new2) | 07-10-2026 |
+| `hindianimeszone.com` (`/download1.php`) | Working (Peak Turnstile verification + mirror extraction) | 07-10-2026 |
 | `kayoanime.com` | Untested | — |
 | `skymovieshd.*` | Untested | — |
 | `toonworld4all.*` | Untested | — |
@@ -143,9 +150,11 @@
 | Site | Status | Last Verified |
 |:-----|:------:|:-------------:|
 | `appdrive.*` · `filebee.*` | Working | 27-09-2026 |
+| `filebee.*` · `drivecloud.*` (`/file/...`) | Pass-through (returns the supplied URL unchanged) | 07-10-2026 |
 | `drivefire.co` | Working | 27-09-2026 |
 | `gdflix.*` | Working | 27-09-2026 |
 | `gdtot.cfd` | Untested | — |
+| `gdshare.top/download/...` · `gcloud.cyou/download/...` | Working (instant AJAX → Google CDN direct URL; FilePress fallback) | 07-10-2026 |
 | `filepress.store` · `pressbee.xyz` | Untested | — |
 | `hubcloud.*` | Working | 30-09-2026 |
 | `hubdrive.*` | Working | 27-09-2026 |
@@ -186,37 +195,7 @@ the bot is running; SQLite uses them to recover pending database changes.
 
 ## ***How It Works***
 
-Most shorteners gate the destination URL behind one of a few patterns. Each has a dedicated bypass:
-
-**Referer trick** — `earnlinks.in`, `shrinkme.click` and similar sites only serve the download form to visitors arriving from a specific referrer domain. Sending the correct `Referer` header bypasses the ad redirect entirely and loads the form directly.
-
-**learn_more.php chain** (`vplink.in`, `arolinks.com`) — the shortener routes visitors through partner ad sites via successive `learn_more.php` calls. The bot follows partner redirects while retaining session cookies, then submits the final shortener's `go-link` form after its counter, or returns an available `gt-link` destination. Manual ad clicks are not automated; if a partner page requires them, the resolver reports a failure instead. Arolinks' Telegram deep-link flow was live-verified on 07-10-2026.
-
-**wpSafeLink chain** (`shortxlinks.in`) — A two-stage WordPress plugin chain through `thetechhint.in` and `distancedata.in`. Each stage POSTs a signed `newwpsafelink` token, waits the server-enforced minimum timer (~15s), then follows a `linkr` redirect to the next stage. Each redirect domain is validated against a known trusted-domain list to catch chain changes early.
-
-**adLinkFly + Turnstile** (`srnky.com`, `clksz.com`, `oii.la`) — Cloudflare Turnstile gates the ad form. The bot solves it via [Peak.fo](https://peak.fo), posts to `advertisingcamps.com`, registers the ad visit on `loanbixby.com`, then posts back to the shortener to receive the signed `ad_form_data` blob for the final `/links/go` call. The same proxy is bound to both the Turnstile solve and all downstream requests to avoid token–IP mismatch.
-
-**XDMovie redirect** (`link.xdmovies.wtf`) — The wrapper redirect is followed, then the downstream `latestnewsonline.sbs` request is sent through the Peak-backed Turnstile client with the configured proxy. The current downstream response remains Cloudflare-protected after solving, so no false direct-link result is returned.
-
-**Buzzheavier redirect** (`buzzheavier.com`) — The resolver calls the file's `/download` endpoint and extracts the final CDN URL from the `Hx-Redirect` response header.
-
-**VikingFile Turnstile** (`vikingfile.com/f/...`) — The resolver extracts the page sitekey, solves the Turnstile challenge through Peak using the configured proxy, posts the token back to the file page, and returns the JSON `link` value.
-
-**ExtraLink session redirect** (`extralink.cc/file/...`) — The resolver follows the file page's session redirect, waits for the server timer, then calls `/wk/<id>` with the page referer and returns the final CDN location.
-
-**Linkshub mirrors** (`links.linkshub.fun/view/...`) — The scraper extracts DriveHub and HubDrive mirrors from a Linkshub view page.
-
-**KatLinks mirrors** (`katlinks.in/archives/...`) — The scraper extracts Send, GDFlix, FilePress/Filebee, Gkyfilehost, and related download mirrors from KatLinks WordPress posts.
-
-**HubCDN redirect** (`hubcdn.club/file/...`, `hubcdn.wiki/file/...`) — The resolver decodes the page's `reurl` payload and returns the embedded public R2 object URL.
-
-**VCloud token flow** (`vcloud.fit/...`, `vcloud.beer/...`) — The resolver decodes the double-base64 token URL, follows the tokenized page, and returns its signed R2 mirror.
-
-**Token flow** (`aylink.co`, `cpmlink.pro`) — These expose a `/get/tk` endpoint that issues a session key from three time-based tokens in the landing page. The bot fetches the session key then posts a fake browser interaction signal to `/links/go2` to receive the destination URL.
-
-**fastdl.zip embed** (`nexdrive.fit`) — The page links to a `fastdl.zip/embed?download=<id>` page which contains a `var reurl` JavaScript variable holding the final Google CDN URL. Extracted with regex, no JS execution needed.
-
-**Redirect follower** (`eonmovies.click/dl/`) — A simple 302 that the bot follows one hop, resolves relative paths to the full domain, and returns the result to the checker for recursion into the appropriate bypass.
+For a detailed breakdown of each resolver's HTTP flow, see [**RESOLVERS.md**](RESOLVERS.md).
 
 ---
 

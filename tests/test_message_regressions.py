@@ -183,6 +183,34 @@ class TestMessageRegressionCases(unittest.IsolatedAsyncioTestCase):
             wait_message.edit.await_args.args[0],
         )
 
+    async def test_resolved_passthrough_link_is_on_own_line(self):
+        link = "https://filebee.xyz/file/6ac6351169b577b115c59b38"
+        text = f"/bypass {link}"
+        entity = SimpleNamespace(
+            type=MessageEntityType.URL,
+            offset=text.index(link),
+            length=len(link),
+        )
+        wait_message = SimpleNamespace(edit=AsyncMock(), delete=AsyncMock())
+        message = SimpleNamespace(
+            reply_to_message=None,
+            text=text,
+            caption=None,
+            entities=[entity],
+            caption_entities=None,
+            reply=AsyncMock(return_value=wait_message),
+            from_user=SimpleNamespace(mention="Contributor", id=7),
+        )
+
+        with patch(
+            "FZBypass.handlers.bypass.direct_link_checker",
+            new=AsyncMock(return_value=link),
+        ):
+            await bypass_check(None, message)
+
+        rendered = wait_message.edit.await_args.args[0]
+        self.assertIn(f"🔗 <b>Resolved Link</b>\n\n{link}", rendered)
+
     def test_inline_link_parser_preserves_url_case_and_trailing_letters(self):
         self.assertEqual(
             extract_inline_link("!BP https://example.com/AbC/pathbp"),
@@ -327,6 +355,113 @@ class TestMessageRegressionCases(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "https://cdn.example/file.mkv")
         resolver.assert_awaited_once_with(link)
+
+    async def test_get_to_link_uses_scraper(self):
+        link = "https://get-to.link/movie/?id=abc&b=1&x=2"
+        with patch(
+            "FZBypass.bypass.checker.gettolink",
+            new=AsyncMock(return_value="<b>Movie</b><a href='https://send.now/x'>Send</a>"),
+        ) as resolver:
+            result = await direct_link_checker(link, onlylink=True)
+
+        self.assertIn("https://send.now/x", result)
+        resolver.assert_awaited_once_with(link)
+
+    async def test_get_to_link_is_a_terminal_scraper_result(self):
+        self.assertTrue(is_excep_link("https://get-to.link/movie/?id=abc"))
+
+    async def test_just2earn_uses_dedicated_resolver(self):
+        link = "https://just2earn.com/UyBG57VN"
+        with patch(
+            "FZBypass.bypass.checker.just2earn",
+            new=AsyncMock(return_value="https://example.org/final"),
+        ) as resolver:
+            result = await direct_link_checker(link, onlylink=True)
+
+        self.assertEqual(result, "https://example.org/final")
+        resolver.assert_awaited_once_with(link)
+        self.assertTrue(is_excep_link(link))
+
+    async def test_hindianimeszone_download_routes_to_scraper(self):
+        link = (
+            "https://002.hindianimeszone.com/download1.php"
+            "?code=8pzXFWUx1nTo6XaLo9aOV77&q=480p+x264"
+        )
+        with patch(
+            "FZBypass.bypass.checker.hindianimeszone",
+            new=AsyncMock(return_value="<b>Download Links</b>"),
+        ) as scraper:
+            result = await direct_link_checker(link, onlylink=True)
+
+        self.assertEqual(result, "<b>Download Links</b>")
+        scraper.assert_awaited_once_with(link)
+        self.assertTrue(is_excep_link(link))
+
+    async def test_gdshare_download_is_returned_unchanged(self):
+        link = (
+            "https://gdshare.top/download/"
+            "bdc294ad64e04511feff6bebb665612b"
+        )
+
+        with patch(
+            "FZBypass.bypass.checker.gcloud",
+            new=AsyncMock(return_value="https://video-downloads.googleusercontent.com/signed/"),
+        ) as resolver:
+            result = await direct_link_checker(link, onlylink=True)
+
+        self.assertEqual(result, "https://video-downloads.googleusercontent.com/signed/")
+        resolver.assert_awaited_once_with(link)
+        self.assertTrue(is_excep_link(link))
+
+    async def test_filebee_and_drivecloud_file_links_are_returned_unchanged(self):
+        links = (
+            "https://filebee.xyz/file/6ac6351169b577b115c59b38",
+            "https://drivecloud.cc/file/D-atHFSPQrQ",
+        )
+
+        for link in links:
+            with self.subTest(link=link):
+                self.assertEqual(
+                    await direct_link_checker(link, onlylink=True),
+                    link,
+                )
+                self.assertTrue(is_excep_link(link))
+
+    async def test_pixeldrain_suffixes_route_to_pixeldrain_resolver(self):
+        for host in ("pixeldrain.in", "pixeldrain.me", "pixeldrain.xyz",
+                     "pixeldrain.co.uk"):
+            with self.subTest(host=host):
+                link = f"https://{host}/u/BaXJWBDL"
+                with patch(
+                    "FZBypass.bypass.checker.pixeldrain",
+                    new=AsyncMock(return_value=f"https://{host}/api/file/id?download"),
+                ) as resolver:
+                    result = await direct_link_checker(link, onlylink=True)
+
+                self.assertEqual(result, f"https://{host}/api/file/id?download")
+                resolver.assert_awaited_once_with(link)
+
+    async def test_supported_site_routes_accept_arbitrary_suffixes(self):
+        cases = (
+            ("https://mediafire.dev/file/id", "mediafire"),
+            ("https://gofile.xyz/d/id", "gofile"),
+            ("https://shortxlinks.me/id", "shortxlinks"),
+            ("https://hubcdn.co.uk/file/id", "hubcdn"),
+            ("https://new1.hdhub4u.xyz/movie/id", "hdhub4u"),
+            ("https://www.filmyfly.co.uk/movie/id", "filmyfly"),
+            ("https://www.hdwebmovies.dev/movie/id", "hdwebmovies"),
+        )
+        for link, resolver_name in cases:
+            with self.subTest(link=link):
+                resolver = AsyncMock(return_value="https://downloads.example/file")
+                with patch(
+                    f"FZBypass.bypass.checker.{resolver_name}",
+                    new=resolver,
+                ):
+                    result = await direct_link_checker(link, onlylink=True)
+
+                self.assertEqual(result, "https://downloads.example/file")
+                resolver.assert_awaited_once_with(link)
 
     async def test_xdmovies_uses_resolver(self):
         with patch(

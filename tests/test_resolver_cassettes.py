@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from resolver_cassette import ResolverCassette
 
+from FZBypass import Config
 from FZBypass.bypass.ddl import (
     _extract_vplink_partner_url,
     _is_manual_partner_ad_gate,
@@ -14,7 +15,11 @@ from FZBypass.bypass.ddl import (
     buzzheavier,
     extralink,
     hubcdn,
+    gcloud,
+    gdshare,  # alias for gcloud – kept so the import itself is exercised
+    just2earn,
     mediafire,
+    pixeldrain,
     vcloud,
     xdmovies,
     vikingfile,
@@ -26,9 +31,12 @@ from FZBypass.bypass.scrape import (
     hdwebmovies,
     katlinks,
     linkshub,
+    gettolink,
+    hindianimeszone,
 )
 from FZBypass.bypass.dlinks import gdflix
 from FZBypass.core.exceptions import DDLException, ResolverStepError
+from FZBypass.core.networking.exceptions import NetworkCloudflareBlock
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -53,6 +61,66 @@ class TestMediaFireCassette(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(raised.exception.resolver, "MediaFire")
         self.assertEqual(raised.exception.step, "extract-download-link")
+
+
+class TestPixeldrainResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_arbitrary_pixeldrain_domains_keep_the_input_host(self):
+        response = MagicMock()
+        response.json.return_value = {"success": True, "name": "archive.zip"}
+        session = MagicMock()
+        session.__enter__.return_value = session
+
+        for host in ("pixeldrain.dev", "pixeldrain.in", "pixeldrain.me",
+                     "pixeldrain.xyz", "pixeldrain.co.uk", "www.pixeldrain.xyz"):
+            with self.subTest(host=host):
+                session.get.return_value = response
+                with (
+                    patch(
+                        "FZBypass.bypass.ddl.cSession",
+                        return_value=session,
+                    ) as session_factory,
+                    patch(
+                        "FZBypass.bypass.ddl.Config.next_proxy",
+                        return_value="http://proxy",
+                    ),
+                ):
+                    result = await pixeldrain(f"https://{host}/u/BaXJWBDL")
+
+                base_url = f"https://{host.removeprefix('www.')}"
+                self.assertEqual(
+                    result,
+                    f"{base_url}/api/file/BaXJWBDL?download",
+                )
+                session_factory.assert_called_with(
+                    impersonate="chrome136",
+                    proxies={"http": "http://proxy", "https": "http://proxy"},
+                )
+                session.get.assert_called_with(
+                    f"{base_url}/api/file/BaXJWBDL/info",
+                    timeout=30,
+                )
+
+    async def test_pixeldrain_list_keeps_com_domain(self):
+        response = MagicMock()
+        response.json.return_value = {"success": True}
+        session = MagicMock()
+        session.__enter__.return_value = session
+        session.get.return_value = response
+
+        with (
+            patch("FZBypass.bypass.ddl.cSession", return_value=session),
+            patch("FZBypass.bypass.ddl.Config.next_proxy", return_value=None),
+        ):
+            result = await pixeldrain("https://pixeldrain.com/l/list-id")
+
+        self.assertEqual(
+            result,
+            "https://pixeldrain.com/api/list/list-id/zip?download",
+        )
+
+    async def test_rejects_invalid_pixeldrain_suffix(self):
+        with self.assertRaisesRegex(DDLException, "unsupported hostname"):
+            await pixeldrain("https://pixeldrain.-xyz/u/id")
 
 
 class TestPartnerChainUrl(unittest.TestCase):
@@ -283,6 +351,376 @@ class TestCyberLoomResolver(unittest.IsolatedAsyncioTestCase):
             result,
             "https://cdn.juicybits.site/files/movie.mkv?token=abc",
         )
+
+
+class TestGetToResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_solves_challenge_form_and_extracts_mirrors(self):
+        initial = SimpleNamespace(
+            text=(
+                '<a href="https://get-to.link/cdn-cgi/content?id=test">hidden</a>'
+                '<form id="query_form" action="https://get-to.link/article/">'
+                '<input name="id" value="abc"><input name="downid" value="/movie">'
+                "</form>"
+            ),
+            raise_for_status=lambda: None,
+        )
+        challenge = SimpleNamespace(raise_for_status=lambda: None)
+        final = SimpleNamespace(
+            text=(
+                "<html><title>Movie page</title><article>"
+                "<h1>The Movie</h1>"
+                '<a href="https://send.now/abc">Send.now</a>'
+                '<a href="https://vikingfile.com/f/xyz">VikingFile</a>'
+                "</article></html>"
+            ),
+            raise_for_status=lambda: None,
+        )
+        session = MagicMock()
+        session.get.side_effect = [initial, challenge]
+        session.post.return_value = final
+
+        with (
+            patch("cloudscraper_turnstile.create_scraper", return_value=session),
+            patch.object(Config, "PEAK_API_KEY", "test-key"),
+            patch.object(Config, "next_proxy", return_value="http://proxy"),
+        ):
+            result = await gettolink(
+                "https://get-to.link/movie/?id=abc&b=1&x=2"
+            )
+
+        self.assertIn("Movie", result)
+        self.assertIn("https://send.now/abc", result)
+        self.assertIn("https://vikingfile.com/f/xyz", result)
+        session.get.assert_any_call(
+            "https://get-to.link/cdn-cgi/content?id=test",
+            headers={"Referer": "https://get-to.link/movie/?id=abc&b=1&x=2"},
+            timeout=90,
+        )
+        session.post.assert_called_once()
+
+
+class TestJust2EarnResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_submits_go_link_form_and_returns_destination(self):
+        url = "https://just2earn.com/UyBG57VN"
+        page = SimpleNamespace(
+            url=url,
+            status_code=200,
+            text=(
+                '<form id="go-link" action="/links/go">'
+                '<input name="_method" value="POST">'
+                '<input name="_csrfToken" value="csrf">'
+                "</form>"
+            ),
+        )
+        response = SimpleNamespace(
+            content=b'{"status":"success","url":"https://example.org/final"}'
+        )
+
+        with (
+            patch("FZBypass.bypass.ddl.cf.get", new=AsyncMock(return_value=page)),
+            patch(
+                "FZBypass.bypass.ddl.cf.post",
+                new=AsyncMock(return_value=response),
+            ) as post,
+        ):
+            result = await just2earn(url)
+
+        self.assertEqual(result, "https://example.org/final")
+        post.assert_awaited_once()
+        self.assertEqual(
+            post.await_args.args[0],
+            "https://just2earn.com/links/go",
+        )
+        self.assertEqual(
+            post.await_args.kwargs["data"],
+            {"_method": "POST", "_csrfToken": "csrf"},
+        )
+
+    async def test_reports_cloudflare_block(self):
+        with (
+            patch(
+                "FZBypass.bypass.ddl.cf.get",
+                new=AsyncMock(side_effect=NetworkCloudflareBlock("blocked")),
+            ),
+            self.assertRaisesRegex(DDLException, "page request failed"),
+        ):
+            await just2earn("https://just2earn.com/UyBG57VN")
+
+
+class TestGDShareResolver(unittest.IsolatedAsyncioTestCase):
+    """gcloud() / gdshare() — instant-AJAX download resolver."""
+
+    def _make_page_resp(self, signed_url: str, csrf_cookie: str = "testcsrf") -> SimpleNamespace:
+        """Minimal download-page response."""
+        cookies: dict = {"csrftoken": csrf_cookie}
+        return SimpleNamespace(
+            status_code=200,
+            url=signed_url,
+            text="<html></html>",
+            cookies=cookies,
+        )
+
+    def _make_gen_resp(self, instant_url: str, csrf: str = "htmxcsrf") -> SimpleNamespace:
+        html = (
+            f'<a href="{instant_url}" id="instant-download-link">Instant</a>'
+            f"<script>var CSRF = '{csrf}';</script>"
+        )
+        return SimpleNamespace(status_code=200, text=html)
+
+    def _make_ajax_resp(self, download_url: str) -> SimpleNamespace:
+        import json
+
+        return SimpleNamespace(
+            status_code=200,
+            text=json.dumps({"success": True, "download_url": download_url}),
+            json=lambda: {"success": True, "download_url": download_url},
+        )
+
+    async def test_resolves_direct_download_via_instant_ajax(self):
+        source = "https://gdshare.top/download/file-id"
+        signed_url = "https://gcloud.cyou/download/signed-token/"
+        instant_url = "https://gdshare.top/instant/abc123"
+        direct_url = "https://video-downloads.googleusercontent.com/ABCDEF"
+
+        page_resp = self._make_page_resp(signed_url)
+        gen_resp = self._make_gen_resp(instant_url)
+        ajax_resp = self._make_ajax_resp(direct_url)
+
+        with patch(
+            "FZBypass.bypass.ddl.http.get",
+            new=AsyncMock(side_effect=[page_resp, gen_resp, ajax_resp]),
+        ):
+            result = await gcloud(source)
+
+        self.assertEqual(result, direct_url)
+
+    async def test_falls_back_to_filepress_when_no_instant_link(self):
+        """When generate-links has no instant href, FilePress is tried."""
+        import json
+
+        source = "https://gcloud.cyou/download/signed-token/"
+        signed_url = "https://gcloud.cyou/download/signed-token/"
+        fp_url = "https://filebee.xyz/file/abc"
+
+        page_resp = self._make_page_resp(signed_url)
+        # generate-links with no instant href
+        gen_resp = SimpleNamespace(status_code=200, text="<div>no instant here</div>")
+        fp_resp = SimpleNamespace(
+            status_code=200,
+            json=lambda: {"success": True, "download_url": fp_url},
+        )
+
+        with patch(
+            "FZBypass.bypass.ddl.http.get",
+            new=AsyncMock(side_effect=[page_resp, gen_resp]),
+        ), patch(
+            "FZBypass.bypass.ddl.http.post",
+            new=AsyncMock(return_value=fp_resp),
+        ):
+            result = await gcloud(source)
+
+        self.assertEqual(result, fp_url)
+
+    async def test_raises_on_expired_file(self):
+        source = "https://gdshare.top/download/expired-id"
+        page_resp = SimpleNamespace(status_code=404, url=source)
+
+        with patch(
+            "FZBypass.bypass.ddl.http.get",
+            new=AsyncMock(return_value=page_resp),
+        ), self.assertRaisesRegex(DDLException, "not found|expired"):
+            await gcloud(source)
+
+    async def test_gdshare_alias_resolves_same_as_gcloud(self):
+        """gdshare is an alias for gcloud — both names work."""
+        self.assertIs(gdshare, gcloud)
+
+
+class TestHindiAnimesZoneResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_extracts_quality_groups_from_already_verified_page(self):
+        url = "https://002.hindianimeszone.com/download1.php?code=abc&q"
+        page = SimpleNamespace(
+            url=url,
+            text=(
+                "<title>abc</title>"
+                '<article class="quality-card">'
+                '<div class="quality-title">480p x264</div>'
+                '<a class="server-btn" data-label="GDShare" '
+                'href="https://gdshare.top/download/480">Open</a>'
+                '<a class="server-btn" data-label="FilePress" '
+                'href="https://filebee.xyz/file/480">Open</a>'
+                "</article>"
+                '<article class="quality-card">'
+                '<div class="quality-title">720p x265</div>'
+                '<a class="server-btn" data-label="Drivecloud" '
+                'href="https://drivecloud.cc/file/720">Open</a>'
+                "</article>"
+            ),
+            raise_for_status=lambda: None,
+        )
+        session = MagicMock()
+        session.get.return_value = page
+
+        with (
+            patch("requests.Session", return_value=session),
+            patch.object(Config, "PEAK_API_KEY", "test-key"),
+            patch.object(Config, "next_proxy", return_value="http://proxy"),
+        ):
+            result = await hindianimeszone(url)
+
+        self.assertIn("<b>Quality: 480p x264</b>", result)
+        self.assertIn("<b>Quality: 720p x265</b>", result)
+        self.assertIn(
+            '<b><a href="https://gdshare.top/download/480">GDShare</a></b>',
+            result,
+        )
+        self.assertIn(
+            '<b><a href="https://drivecloud.cc/file/720">Drivecloud</a></b>',
+            result,
+        )
+        self.assertIn(
+            '<b><a href="https://gdshare.top/download/480">GDShare</a></b> | '
+            '<b><a href="https://filebee.xyz/file/480">FilePress</a></b>',
+            result,
+        )
+        session.post.assert_not_called()
+        session.close.assert_called_once()
+
+    async def test_solves_turnstile_and_extracts_server_mirrors(self):
+        page = SimpleNamespace(
+            url="https://002.hindianimeszone.com/download1.php?code=abc&q=480p",
+            text=(
+                '<form id="captchaForm" method="POST">'
+                '<input name="code" value="abc">'
+                '<input name="q" value="480p">'
+                '<div class="cf-turnstile" data-sitekey="site-key"></div>'
+                "</form>"
+            ),
+            raise_for_status=lambda: None,
+        )
+        solved = SimpleNamespace(
+            json=lambda: {"success": True, "data": {"token": "turnstile-token"}},
+            raise_for_status=lambda: None,
+        )
+        result_page = SimpleNamespace(
+            url=page.url,
+            text=(
+                "<title>abc</title><h1>Download Page</h1>"
+                '<article class="quality-card"><div class="quality-title">480p</div>'
+                '<div class="server-list">'
+                '<a class="server-btn" data-label="GDShare" '
+                'href="https://gdshare.top/download/file">Open</a>'
+                '<a class="server-btn" data-label="FilePress" '
+                'href="https://filebee.xyz/file/id">Open</a></div></article>'
+                '<article class="quality-card"><div class="quality-title">720p</div>'
+                '<div class="server-list">'
+                '<a class="server-btn" data-label="Drivecloud" '
+                'href="https://drivecloud.cc/file/id">Open</a>'
+                "</div></article>"
+            ),
+            raise_for_status=lambda: None,
+        )
+        session = MagicMock()
+        session.get.return_value = page
+        session.post.side_effect = [solved, result_page]
+
+        with (
+            patch("requests.Session", return_value=session),
+            patch.object(Config, "PEAK_API_KEY", "test-key"),
+            patch.object(Config, "next_proxy", return_value="http://proxy"),
+        ):
+            result = await hindianimeszone(page.url)
+
+        self.assertIn("Download Page", result)
+        self.assertIn("<b>Quality: 480p</b>", result)
+        self.assertIn("<b>Quality: 720p</b>", result)
+        self.assertIn("https://gdshare.top/download/file", result)
+        self.assertIn("https://filebee.xyz/file/id", result)
+        self.assertIn("https://drivecloud.cc/file/id", result)
+        self.assertIn(
+            '<b><a href="https://gdshare.top/download/file">GDShare</a></b> | '
+            '<b><a href="https://filebee.xyz/file/id">FilePress</a></b>',
+            result,
+        )
+        self.assertEqual(session.proxies.update.call_args.args[0]["https"], "http://proxy")
+        self.assertEqual(session.post.call_args_list[0].kwargs["json"]["sitekey"], "site-key")
+        self.assertEqual(
+            session.post.call_args_list[1].kwargs["data"],
+            {
+                "code": "abc",
+                "q": "480p",
+                "cf-turnstile-response": "turnstile-token",
+            },
+        )
+
+    async def test_requires_turnstile_key_and_proxy(self):
+        with (
+            patch.object(Config, "PEAK_API_KEY", ""),
+            self.assertRaisesRegex(DDLException, "PEAK_API_KEY"),
+        ):
+            await hindianimeszone(
+                "https://002.hindianimeszone.com/download1.php?code=abc"
+            )
+
+        with (
+            patch.object(Config, "PEAK_API_KEY", "test-key"),
+            patch.object(Config, "next_proxy", return_value=None),
+            self.assertRaisesRegex(DDLException, "configured proxy"),
+        ):
+            await hindianimeszone(
+                "https://002.hindianimeszone.com/download1.php?code=abc"
+            )
+
+    async def test_retries_page_without_turnstile_form_with_another_proxy(self):
+        url = "https://002.hindianimeszone.com/download1.php?code=abc&q=480p"
+        blocked_page = SimpleNamespace(
+            url=url,
+            text="<title>Temporary verification error</title><p>Try again</p>",
+            raise_for_status=lambda: None,
+        )
+        captcha_page = SimpleNamespace(
+            url=url,
+            text=(
+                '<form id="captchaForm">'
+                '<input name="code" value="abc">'
+                '<input name="q" value="480p">'
+                '</form><div class="cf-turnstile" data-sitekey="site-key"></div>'
+            ),
+            raise_for_status=lambda: None,
+        )
+        solved = SimpleNamespace(
+            json=lambda: {"success": True, "data": {"token": "token"}},
+            raise_for_status=lambda: None,
+        )
+        mirrors = SimpleNamespace(
+            url=url,
+            text=(
+                '<a class="server-btn" data-label="GDShare" '
+                'href="https://gdshare.top/download/file">Open</a>'
+            ),
+            raise_for_status=lambda: None,
+        )
+        first_session = MagicMock()
+        first_session.get.return_value = blocked_page
+        second_session = MagicMock()
+        second_session.get.return_value = captcha_page
+        second_session.post.side_effect = [solved, mirrors]
+
+        with (
+            patch(
+                "requests.Session", side_effect=[first_session, second_session]
+            ),
+            patch.object(Config, "PEAK_API_KEY", "test-key"),
+            patch.object(
+                Config, "next_proxy", side_effect=["http://proxy-1", "http://proxy-2"]
+            ) as next_proxy,
+        ):
+            result = await hindianimeszone(url)
+
+        self.assertIn("https://gdshare.top/download/file", result)
+        self.assertEqual(next_proxy.call_count, 2)
+        first_session.close.assert_called_once()
+        second_session.close.assert_called_once()
 
 
 class TestExtraFlixResolver(unittest.IsolatedAsyncioTestCase):

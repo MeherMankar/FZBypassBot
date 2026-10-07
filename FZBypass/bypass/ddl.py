@@ -842,6 +842,223 @@ async def transcript(url: str, DOMAIN: str, ref: str, sltime: float) -> str:
     raise DDLException("transcript: no URL in response")
 
 
+async def gcloud(url: str) -> str:
+    """
+    GCloud / GDShare pure-HTTP bypass.
+
+    Accepts both gdshare.top/download/<token> and gcloud.cyou/download/<token> URLs.
+
+    Flow
+    ----
+    1. GET the download page → follows any redirect to gcloud.cyou/download/<signed_token>/
+    2. GET /download/<signed_token>/generate-links/ with HX-Request: true
+       → HTMX partial contains an ``href="https://gdshare.top/instant/<instant_token>"``
+    3. GET <instant_url>?ajax=1&_t=<ms_timestamp> with X-Requested-With: XMLHttpRequest
+       → {"success": true, "download_url": "https://video-downloads.googleusercontent.com/..."}
+    4. If no instant URL found (some files omit it), fall back to
+       POST /download/<signed_token>/filepress/ → {"success": true, "download_url": "..."}
+
+    The vault-based links (xCloud, GoFile, Buzzheavier) require a Cloudflare Turnstile
+    challenge at /download/resolve/ and cannot be resolved via plain HTTP.
+    """
+    import time as _time
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+    _HEADERS = {
+        "User-Agent": _UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    # ── Step 1: fetch download page (follows redirect gdshare.top → gcloud.cyou) ──
+    try:
+        r1 = await http.get(url, headers=_HEADERS, timeout=_SHORT_TIMEOUT)
+    except NetworkError as e:
+        raise DDLException(f"gcloud: page fetch failed — {type(e).__name__}") from e
+
+    if r1.status_code == 404:
+        raise DDLException("gcloud: file not found (link may have expired)")
+    if r1.status_code != 200:
+        raise DDLException(f"gcloud: unexpected HTTP {r1.status_code} on download page")
+
+    page_url = str(r1.url)
+    # The signed token sits between /download/ and the trailing slash
+    m_tok = _re.search(r"/download/([^/]+)/?$", page_url)
+    if not m_tok:
+        raise DDLException(f"gcloud: could not extract signed token from URL: {page_url}")
+    signed_token = m_tok.group(1)
+
+    # Grab CSRF token from the download page cookie
+    csrf = r1.cookies.get("csrftoken", "")
+
+    # ── Step 2: fetch generate-links HTMX partial ────────────────────────────
+    gen_url = f"https://gcloud.cyou/download/{signed_token}/generate-links/"
+    try:
+        r2 = await http.get(
+            gen_url,
+            headers={
+                **_HEADERS,
+                "HX-Request": "true",
+                "HX-Current-URL": page_url,
+            },
+            timeout=_SHORT_TIMEOUT,
+        )
+    except NetworkError as e:
+        raise DDLException(f"gcloud: generate-links fetch failed — {type(e).__name__}") from e
+
+    if r2.status_code == 404:
+        raise DDLException("gcloud: generate-links returned 404 — file may have expired")
+    if r2.status_code != 200:
+        raise DDLException(f"gcloud: generate-links HTTP {r2.status_code}")
+
+    gen_html = r2.text
+
+    # Update CSRF from HTMX script block (more reliable than cookie alone)
+    csrf_m = _re.search(r"CSRF\s*=\s*'([^']+)'", gen_html)
+    if csrf_m:
+        csrf = csrf_m.group(1)
+
+    # ── Step 3: extract instant URL and resolve via AJAX ────────────────────
+    instant_m = _re.search(
+        r'href="(https://(?:gdshare\.top|gcloud\.cyou)/instant/[^"]+)"',
+        gen_html,
+    )
+    if instant_m:
+        instant_url = instant_m.group(1)
+        ts_ms = int(_time.time() * 1000)
+        ajax_url = f"{instant_url}?ajax=1&_t={ts_ms}"
+        try:
+            ra = await http.get(
+                ajax_url,
+                headers={
+                    **_HEADERS,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Referer": instant_url,
+                },
+                timeout=_SHORT_TIMEOUT,
+            )
+        except NetworkError as e:
+            raise DDLException(f"gcloud: instant AJAX failed — {type(e).__name__}") from e
+
+        if ra.status_code == 200:
+            try:
+                data = ra.json()
+            except Exception:
+                raise DDLException("gcloud: instant AJAX returned non-JSON response")
+            if data.get("success") and data.get("download_url"):
+                return data["download_url"]
+
+    # ── Step 4: FilePress fallback ────────────────────────────────────────────
+    fp_url = f"https://gcloud.cyou/download/{signed_token}/filepress/"
+    try:
+        rf = await http.post(
+            fp_url,
+            headers={
+                **_HEADERS,
+                "X-CSRFToken": csrf,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": page_url,
+                "Origin": "https://gcloud.cyou",
+            },
+            content=b"",
+            timeout=_SHORT_TIMEOUT,
+        )
+    except NetworkError as e:
+        raise DDLException(f"gcloud: filepress fallback failed — {type(e).__name__}") from e
+
+    if rf.status_code == 200:
+        try:
+            fp_data = rf.json()
+        except Exception:
+            raise DDLException("gcloud: filepress returned non-JSON response")
+        if fp_data.get("success") and fp_data.get("download_url"):
+            return fp_data["download_url"]
+        msg = fp_data.get("message", "FilePress link unavailable")
+        raise DDLException(f"gcloud: {msg}")
+
+    raise DDLException(
+        "gcloud: no downloadable link available — "
+        "instant link missing and FilePress disabled by file owner"
+    )
+
+
+# Keep the old name as an alias so any external callers are not broken.
+gdshare = gcloud
+
+
+async def just2earn(url: str) -> str:
+    """Resolve a Just2Earn AdLinkFly-style go-link form when accessible."""
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        page = await cf.get(url, timeout=30)
+    except NetworkError as e:
+        raise DDLException(f"Just2Earn: page request failed — {type(e).__name__}") from e
+
+    soup = BeautifulSoup(page.text, "html.parser")
+    form = soup.select_one("form#go-link")
+    if form is None:
+        form = next(
+            (
+                candidate
+                for candidate in soup.find_all("form")
+                if "/links/go" in (candidate.get("action") or "")
+            ),
+            None,
+        )
+    if form is None:
+        if page.status_code in (403, 503) or "Just a moment" in page.text:
+            raise DDLException("Just2Earn: Cloudflare challenge blocks the page")
+        raise DDLException("Just2Earn: go-link form not found")
+
+    fields = {
+        item.get("name"): item.get("value", "")
+        for item in form.select("input[name]")
+    }
+    if not fields:
+        raise DDLException("Just2Earn: go-link form has no submission fields")
+
+    action = urljoin(page.url, form.get("action") or "/links/go")
+    counter_match = _re.search(
+        r'"counter_value"\s*:\s*(\d+)|counter_value["\s:=]+(\d+)',
+        page.text,
+    )
+    counter = int(next(value for value in counter_match.groups() if value)) if counter_match else 0
+    if counter:
+        await asleep(counter + 1)
+
+    try:
+        response = await cf.post(
+            action,
+            data=fields,
+            headers={
+                "Referer": page.url,
+                "Origin": base,
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+            timeout=30,
+        )
+    except NetworkError as e:
+        raise DDLException(f"Just2Earn: go-link submission failed — {type(e).__name__}") from e
+
+    try:
+        data = _json.loads(response.content)
+    except _json.JSONDecodeError as e:
+        raise DDLException("Just2Earn: invalid go-link response") from e
+    destination = data.get("url")
+    if not destination or not isinstance(destination, str):
+        raise DDLException(
+            f"Just2Earn: {data.get('message', 'destination missing from response')}"
+        )
+    return destination
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # REMAINING RESOLVERS (cfscrape or requests — documented reasons)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1967,26 +2184,50 @@ async def pixeldrain(url: str) -> str:
     Pixeldrain direct link generator.
 
     Supports single files (/u/<id>) and lists (/l/<id>).
-    Single file  → https://pixeldrain.com/api/file/<id>?download
-    List         → https://pixeldrain.com/api/list/<id>/zip?download
+    Supports Pixeldrain domains with any valid DNS suffix, including
+    multi-label suffixes such as .co.uk.
+    Single file  → https://pixeldrain.<domain>/api/file/<id>?download
+    List         → https://pixeldrain.<domain>/api/list/<id>/zip?download
     Verifies the file exists via the info endpoint before returning.
     """
-    url = url.strip("/ ")
-    parts = url.rstrip("/").split("/")
-    file_id = parts[-1]
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    domain = host.removeprefix("www.")
+    if not _re.fullmatch(
+        r"pixeldrain\."
+        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*",
+        domain,
+    ):
+        raise DDLException("Pixeldrain: unsupported hostname")
 
-    if len(parts) >= 2 and parts[-2] == "l":
-        info_link = f"https://pixeldrain.com/api/list/{file_id}"
-        dl_link = f"https://pixeldrain.com/api/list/{file_id}/zip?download"
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 2 or parts[0] not in {"u", "l"}:
+        raise DDLException("Pixeldrain: unsupported URL format")
+    kind, file_id = parts
+    base_url = f"{parsed.scheme or 'https'}://{domain}"
+
+    if kind == "l":
+        info_link = f"{base_url}/api/list/{file_id}"
+        dl_link = f"{base_url}/api/list/{file_id}/zip?download"
     else:
-        info_link = f"https://pixeldrain.com/api/file/{file_id}/info"
-        dl_link = f"https://pixeldrain.com/api/file/{file_id}?download"
+        info_link = f"{base_url}/api/file/{file_id}/info"
+        dl_link = f"{base_url}/api/file/{file_id}?download"
+
+    proxy = Config.next_proxy()
+
+    def _fetch_info() -> dict:
+        with cSession(
+            impersonate="chrome136",
+            proxies={"http": proxy, "https": proxy} if proxy else None,
+        ) as session:
+            response = session.get(info_link, timeout=30)
+            response.raise_for_status()
+            return response.json()
 
     try:
-        resp = await http.get(info_link, timeout=_SHORT_TIMEOUT)
-        resp.raise_for_status()
-        data = _json.loads(resp.content)
-    except NetworkError as e:
+        data = await _to_thread(_fetch_info)
+    except Exception as e:
         raise DDLException(f"Pixeldrain: {type(e).__name__}") from e
 
     if not data.get("success", True):
@@ -2885,8 +3126,16 @@ async def earnlinks(url: str) -> str:
             timeout=20,
         )
 
-        if page.status_code != 200 or "earnlinks.in" not in str(page.url):
+        if page.status_code != 200:
             raise DDLException(f"earnlinks: unexpected response {page.status_code}")
+
+        # If redirected away from earnlinks.in, the itiexamshala referer trick
+        # didn't work for this code — it uses a partner chain we can't bypass
+        if "earnlinks.in" not in str(page.url):
+            raise DDLException(
+                f"earnlinks: code redirects to partner site "
+                f"({str(page.url).split('/')[2]}) — not bypassable via HTTP"
+            )
 
         html = page.text
         soup = BeautifulSoup(html, "html.parser")
@@ -3481,6 +3730,153 @@ async def srnky(url: str) -> str:
         raise
     except Exception as e:
         raise DDLException(f"srnky: {type(e).__name__} — {e}") from e
+
+
+async def exeygo(url: str) -> str:
+    """
+    exeygo.com — CakePHP adLinkFly bypass via Turnstile + 2-step form.
+
+    Flow:
+      1. GET exeygo.com/<alias>
+         → CakePHP before-captcha form with _csrfToken + f_n=sle + Turnstile
+      2. Solve Turnstile via Peak API
+      3. POST /alias with _csrfToken + f_n + cf-turnstile-response
+         → Returns shortener page with go-link form + ad_form_data
+      4. Wait counter_value seconds
+      5. POST /links/go → JSON with destination URL
+
+    Requires: PEAK_API_KEY
+    """
+    import re as _re2
+    import time as _time
+    import requests as _req
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+
+    if not Config.PEAK_API_KEY:
+        raise DDLException(
+            "exeygo: PEAK_API_KEY is required. Set it in config.env."
+        )
+
+    def _run_sync() -> str:
+        from urllib.parse import urlparse as _up
+
+        sess = _req.Session()
+        sess.headers.update({"User-Agent": _UA})
+
+        # Step 1: GET page — get CSRF token and Turnstile sitekey
+        r1 = sess.get(url, timeout=20)
+        if r1.status_code != 200:
+            raise DDLException(f"exeygo: HTTP {r1.status_code}")
+
+        soup1 = BeautifulSoup(r1.text, "html.parser")
+        form = soup1.find("form", {"id": "before-captcha"}) or \
+               soup1.find("form")
+        if not form:
+            raise DDLException("exeygo: before-captcha form not found")
+
+        inputs = {
+            i.get("name"): i.get("value", "")
+            for i in form.find_all("input")
+            if i.get("name")
+        }
+        action = form.get("action", "")
+        parsed = _up(url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        if not action.startswith("http"):
+            action = f"{base}{action}"
+
+        sitekey_m = _re2.search(r'(0x4[A-Za-z0-9]{20,})', r1.text)
+        sitekey = sitekey_m.group(1) if sitekey_m else "0x4AAAAAACPCPhXQQr5wP1VW"
+
+        # Step 2: Solve Turnstile via Peak
+        proxy = Config.next_proxy()
+        peak_payload = {
+            "task_type": "turnstiletask",
+            "url": url,
+            "sitekey": sitekey,
+        }
+        if proxy:
+            peak_payload["proxy"] = proxy
+
+        peak_r = _req.post(
+            "https://api.peak.fo/solve",
+            headers={"X-API-Key": Config.PEAK_API_KEY},
+            json=peak_payload,
+            timeout=120,
+        )
+        peak_data = peak_r.json()
+        if not peak_data.get("success"):
+            raise DDLException(
+                f"exeygo: Turnstile solve failed — {peak_data.get('error', peak_data)}"
+            )
+        ts_token = peak_data["data"]["token"]
+
+        # Step 3: POST with Turnstile response → get go-link page
+        inputs["cf-turnstile-response"] = ts_token
+        r2 = sess.post(
+            action,
+            data=inputs,
+            headers={"Referer": url, "Origin": base},
+            timeout=30,
+        )
+        if r2.status_code != 200:
+            raise DDLException(f"exeygo: captcha POST failed — {r2.status_code}")
+
+        soup2 = BeautifulSoup(r2.text, "html.parser")
+        golink = soup2.select_one("form#go-link")
+        if not golink:
+            # Check for direct gt-link anchor
+            gt = soup2.find("a", id="gt-link", href=lambda h: h and h.startswith("http"))
+            if gt:
+                return gt["href"]
+            raise DDLException("exeygo: go-link form not found after Turnstile solve")
+
+        hidden = {
+            i.get("name"): i.get("value", "")
+            for i in golink.find_all("input")
+            if i.get("name")
+        }
+        go_action = golink.get("action", "/links/go")
+        if not go_action.startswith("http"):
+            go_action = f"{base}{go_action}"
+
+        # Step 4: Wait counter
+        counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', r2.text)
+        counter = int(counter_m.group(1)) if counter_m else 5
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        # Step 5: POST /links/go
+        r3 = sess.post(
+            go_action,
+            data=hidden,
+            headers={
+                "Referer": str(r2.url),
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, */*",
+            },
+            timeout=20,
+        )
+        try:
+            result = _json.loads(r3.content)
+        except Exception:
+            raise DDLException(f"exeygo: non-JSON response — {r3.text[:200]}")
+
+        dest = result.get("url")
+        if not dest:
+            raise DDLException(f"exeygo: {result.get('message', 'no URL in response')}")
+        return dest
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as e:
+        raise DDLException(f"exeygo: {type(e).__name__} — {e}") from e
 
 
 async def shortxlinks(url: str) -> str:
