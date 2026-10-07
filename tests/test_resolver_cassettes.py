@@ -256,7 +256,7 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("requests.Session", return_value=session),
-            patch("cloudscraper.create_scraper", return_value=session),
+            patch("curl_cffi.requests.Session", return_value=session),
         ):
             result = await arolinks(short_url)
 
@@ -286,8 +286,16 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
             ),
             response("https://techmint.in/article-1"),
             response(
-                "https://techmint.in/studyeducations/?educationsuniversities=NqtedK",
-                '<script>window.location.href = "https://techmint.in/article-2";</script>',
+                "https://techmint.in/readmore/",
+                '<script>window.location.href = '
+                '"https://techmint.in/studyeducations/?educationsscholorships='
+                'NqtedK&pgtr=10&st=2";</script>',
+            ),
+            response(
+                "https://techmint.in/studyeducations/?educationsscholorships="
+                "NqtedK&pgtr=10&st=2",
+                '<script>window.location.href = '
+                '"https://techmint.in/article-2";</script>',
             ),
             response("https://techmint.in/article-2"),
             response(
@@ -296,8 +304,7 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
             ),
             response("https://onlinewish.in/article-3"),
             response(
-                "https://onlinewish.in/studyblogs/learn_more.php",
-                f'<script>window.location.href = "{short_url}";</script>',
+                "https://onlinewish.in/readmore/",
             ),
             response(
                 short_url,
@@ -309,11 +316,10 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
             "https://arolinks.com/links/go",
             content=f'{{"url":"{final_url}"}}'.encode(),
         )
-
         with (
             patch("requests.Session", return_value=session),
-            patch("cloudscraper.create_scraper", return_value=session),
-            patch("time.sleep"),
+            patch("requests.Session", return_value=session),
+            patch("curl_cffi.requests.Session", return_value=session),
         ):
             result = await arolinks(short_url)
 
