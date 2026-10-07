@@ -62,7 +62,7 @@ def _to_response(r: Any) -> HTTPResponse:
     )
 
 
-def _make_ts_scraper(api_key: str) -> Any:
+def _make_ts_scraper(api_key: str, proxy: str | None = None) -> Any:
     """
     Build a cloudscraper-turnstile session with the Peak API key.
 
@@ -75,7 +75,10 @@ def _make_ts_scraper(api_key: str) -> Any:
     regardless of whether the env var is set on the host.
     """
     import cloudscraper_turnstile as _cts  # type: ignore[import]
-    return _cts.create_scraper(api_key=api_key)
+    kwargs: dict[str, Any] = {"api_key": api_key}
+    if proxy:
+        kwargs["proxy"] = proxy
+    return _cts.create_scraper(**kwargs)
 
 
 def _raise_from_requests_exc(exc: Exception, url: str) -> None:
@@ -109,7 +112,7 @@ class TurnstileClient:
         self._api_key: str | None = None
         self._init_lock = asyncio.Lock()
 
-    def _ensure_scraper(self) -> Any:
+    def _ensure_scraper(self, proxy: str | None = None) -> Any:
         """Return (cached) scraper or raise if key not configured."""
         if self._scraper is not None:
             return self._scraper
@@ -122,7 +125,7 @@ class TurnstileClient:
                 "Set it to your Peak.fo API key to use Turnstile bypass."
             )
         self._api_key = key
-        self._scraper = _make_ts_scraper(key)
+        self._scraper = _make_ts_scraper(key, proxy=proxy)
         return self._scraper
 
     async def get(
@@ -135,7 +138,9 @@ class TurnstileClient:
         timeout: int = TS_TIMEOUT,
         proxy: str | None = None,
     ) -> HTTPResponse:
-        scraper = self._ensure_scraper()
+        scraper = self._ensure_scraper(proxy=proxy)
+        if proxy and not getattr(scraper, "peak_proxy", None):
+            scraper.peak_proxy = proxy
         kwargs: dict[str, Any] = {
             "allow_redirects": allow_redirects,
             "timeout": timeout,
@@ -166,7 +171,9 @@ class TurnstileClient:
         timeout: int = TS_TIMEOUT,
         proxy: str | None = None,
     ) -> HTTPResponse:
-        scraper = self._ensure_scraper()
+        scraper = self._ensure_scraper(proxy=proxy)
+        if proxy and not getattr(scraper, "peak_proxy", None):
+            scraper.peak_proxy = proxy
         kwargs: dict[str, Any] = {"timeout": timeout}
         if data is not None:
             kwargs["data"] = data

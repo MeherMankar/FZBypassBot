@@ -3,23 +3,11 @@ from FZBypass.core.commands import BotCommands
 from wzgram import idle
 from wzgram.filters import command, user
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from os import path as ospath, execl, remove as _remove
-from glob import glob as _glob
+from os import path as ospath, execl
 from asyncio import create_subprocess_exec
 import asyncio
 from sys import executable
 from threading import Thread
-
-
-def _cleanup_session_files():
-    """Remove stale SQLite WAL/lock files left by a previous unclean shutdown."""
-    for pattern in ("*.session-shm", "*.session-wal", "*.session.lock"):
-        for f in _glob(pattern):
-            try:
-                _remove(f)
-                LOGGER.info(f"Removed stale session file: {f}")
-            except OSError:
-                pass
 
 
 class Health(BaseHTTPRequestHandler):
@@ -94,7 +82,6 @@ async def _keep_alive():
 
 
 async def main():
-    _cleanup_session_files()
     Thread(target=serve_health, daemon=True).start()
     asyncio.create_task(_keep_alive())
     Config.WEBSHARE_MANAGER.start_background_refresher()

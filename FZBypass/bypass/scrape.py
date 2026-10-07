@@ -30,7 +30,11 @@ from FZBypass.bypass.ddl import transcript
 from FZBypass.core.exceptions import DDLException
 from FZBypass.core.networking import cf, http
 from FZBypass.core.networking.client import DEFAULT_TIMEOUT as _SHORT_TIMEOUT
-from FZBypass.core.networking.exceptions import NetworkError
+from FZBypass.core.networking.exceptions import (
+    NetworkConnectionError,
+    NetworkError,
+    NetworkTimeout,
+)
 
 # Maximum hops when following redirect chains in toonworld4all
 _MAX_REDIRECT_DEPTH = 10
@@ -374,6 +378,29 @@ async def tamilmv(url: str) -> str:
 # HDHub4u
 # ═══════════════════════════════════════════════════════════════════════════════
 
+async def hdstream4u(url: str) -> str:
+    """Extract the download URL exposed by an HDStream4u file page."""
+    try:
+        resp = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"HDStream4u: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    download_field = soup.select_one("#tab_down_link textarea")
+    download_url = download_field.get_text(strip=True) if download_field else ""
+    if not download_url.startswith(("http://", "https://")):
+        raise DDLException("HDStream4u: download link not found on page")
+
+    try:
+        download_resp = await cf.get(download_url)
+    except NetworkError as e:
+        raise DDLException(f"HDStream4u: download page unavailable ({type(e).__name__})") from e
+    if "downloads disabled for this file" in download_resp.text.lower():
+        raise DDLException("HDStream4u: downloads are disabled for this file")
+
+    return download_url
+
+
 async def hdhub4u(url: str) -> str:
     """
     Scrape download links from hdhub4u.* movie pages.
@@ -383,10 +410,29 @@ async def hdhub4u(url: str) -> str:
     or direct shorteners.  The buttons are typically inside <article> or
     <div class="entry-content"> as plain <a> tags.
     """
-    try:
-        resp = await cf.get(url)
-    except NetworkError as e:
-        raise DDLException(f"HDHub4u: {type(e).__name__}") from e
+    request_urls = [url]
+    parsed_url = urlparse(url)
+    if parsed_url.hostname == "new1.hdhub4u.free":
+        request_urls.append(
+            parsed_url._replace(netloc="new2.hdhub4u.free").geturl()
+        )
+
+    resp = None
+    last_error: NetworkError | None = None
+    for request_url in request_urls:
+        try:
+            resp = await cf.get(request_url)
+            break
+        except (NetworkTimeout, NetworkConnectionError) as e:
+            last_error = e
+            if request_url == request_urls[-1]:
+                raise DDLException(f"HDHub4u: {type(e).__name__}") from e
+        except NetworkError as e:
+            raise DDLException(f"HDHub4u: {type(e).__name__}") from e
+    if resp is None:
+        raise DDLException(
+            f"HDHub4u: {type(last_error).__name__ if last_error else 'request failed'}"
+        )
 
     soup = BeautifulSoup(resp.text, "html.parser")
     post_title = soup.title.string.strip() if soup.title else "Unknown"
@@ -395,7 +441,8 @@ async def hdhub4u(url: str) -> str:
     _DL_DOMAINS = (
         "gdflix", "hubdrive", "hubcloud", "drivescript",
         "gdtot", "filepress", "appdrive", "katdrive",
-        "drivefire", "filebee", "pressbee",
+        "drivefire", "filebee", "pressbee", "hdstream4u",
+        "hubstream",
     )
 
     # Collect all external download links, grouped by quality label
@@ -422,7 +469,13 @@ async def hdhub4u(url: str) -> str:
             # Skip internal links and ads
             if "hdhub4u" in href or "bit.ly" in href.lower():
                 continue
-            if any(d in href.lower() for d in _DL_DOMAINS):
+            host = (urlparse(href).hostname or "").lower()
+            if any(
+                host == d
+                or host.startswith(f"{d}.")
+                or f".{d}." in host
+                for d in _DL_DOMAINS
+            ):
                 label = el.get_text(strip=True) or href.split("/")[2]
                 sections.setdefault(current_heading, []).append(
                     f'<a href="{href}">{label}</a>'
@@ -437,6 +490,325 @@ async def hdhub4u(url: str) -> str:
         out += " | ".join(links) + "\n"
 
     return out
+
+
+async def extraflix(url: str) -> str:
+    """
+    Scrape ExtraFlix movie pages and their Linkshub mirror pages.
+
+    ExtraFlix posts expose quality-specific ``links.linkshub.fun/view/...``
+    buttons. Each Linkshub page then lists one or more DriveHub mirrors.
+    """
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"ExtraFlix: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else "ExtraFlix"
+    mirror_pages: list[str] = []
+    seen_pages: set[str] = set()
+
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if host == "links.linkshub.fun" and "/view/" in href and href not in seen_pages:
+            seen_pages.add(href)
+            mirror_pages.append(href)
+
+    if not mirror_pages:
+        raise DDLException("ExtraFlix: no Linkshub download pages found")
+
+    links: list[tuple[str, str]] = []
+    seen_links: set[str] = set()
+    for mirror_page in mirror_pages:
+        try:
+            mirror_response = await cf.get(mirror_page)
+        except NetworkError as e:
+            raise DDLException(
+                f"ExtraFlix: mirror page unavailable ({type(e).__name__})"
+            ) from e
+
+        mirror_soup = BeautifulSoup(mirror_response.text, "html.parser")
+        filename = (
+            mirror_soup.title.get_text(" ", strip=True)
+            if mirror_soup.title
+            else "Download"
+        )
+        for anchor in mirror_soup.find_all("a", href=True):
+            href = anchor["href"].strip()
+            host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+            if (
+                host.endswith("drivehub.dad")
+                or host == "hubdrive.pics"
+            ) and href not in seen_links:
+                seen_links.add(href)
+                links.append((filename, href))
+
+    if not links:
+        raise DDLException("ExtraFlix: no DriveHub mirrors found")
+
+    lines = [f"<b>🎬 {title}</b>", "", "<b>Download Links</b>"]
+    for filename, href in links:
+        lines.append(f"\n<b>{filename}</b>\n<a href=\"{href}\">Download</a>")
+    return "\n".join(lines)
+
+
+async def linkshub(url: str) -> str:
+    """Extract DriveHub mirrors from a Linkshub view page."""
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"Linkshub: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else "Linkshub"
+    links: list[str] = []
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if (
+            host.endswith("drivehub.dad") or host == "hubdrive.pics"
+        ) and href not in links:
+            links.append(href)
+
+    if not links:
+        raise DDLException("Linkshub: no DriveHub mirrors found")
+
+    lines = [f"<b>🎬 {title}</b>", "", "<b>Download Links</b>"]
+    for href in links:
+        lines.append(f"\n<a href=\"{href}\">Download</a>")
+    return "\n".join(lines)
+
+
+async def katlinks(url: str) -> str:
+    """Scrape KatLinks WordPress posts for their download mirrors."""
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"KatLinks: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    article = soup.select_one("article") or soup
+    title = (
+        article.select_one(".entry-title").get_text(" ", strip=True)
+        if article.select_one(".entry-title")
+        else "KatLinks"
+    )
+    allowed_hosts = (
+        "send.now",
+        "gdflix",
+        "filebee",
+        "gkyfilehost",
+        "filepress",
+        "hubcloud",
+        "hubdrive",
+        "drivehub",
+    )
+    links: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for anchor in article.find_all("a", href=True):
+        href = anchor["href"].strip()
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if (
+            any(label in host for label in allowed_hosts)
+            and href not in seen
+        ):
+            seen.add(href)
+            label = anchor.get_text(" ", strip=True) or host
+            links.append((label, href))
+
+    if not links:
+        raise DDLException("KatLinks: no download mirrors found")
+
+    lines = [f"<b>🎬 {title}</b>", "", "<b>Download Links</b>"]
+    for label, href in links:
+        lines.append(f"\n<b>{label}</b>\n<a href=\"{href}\">Download</a>")
+    return "\n".join(lines)
+
+
+async def bollyflix(url: str) -> str:
+    """
+    Scrape Bollyflix movie/series pages for supported DDL mirror links.
+
+    Bollyflix pages are WordPress-style index pages. Download buttons may be
+    grouped below quality headings and commonly point to GDFlix, HubCloud,
+    HubDrive, DriveHub, or related mirror hosts.
+    """
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"Bollyflix: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else "Bollyflix"
+    content = (
+        soup.select_one("article")
+        or soup.select_one("div.entry-content")
+        or soup.select_one("main")
+        or soup
+    )
+    mirror_hosts = (
+        "gdflix", "hubcloud", "hubdrive", "drivehub", "drivescript",
+        "gdtot", "filepress", "appdrive", "katdrive", "drivefire",
+        "filebee", "pressbee", "hdstream4u", "hubstream",
+    )
+    sections: dict[str, list[str]] = {}
+    heading = "Download Links"
+    seen: set[str] = set()
+
+    for element in content.find_all(["h2", "h3", "h4", "strong", "a"]):
+        if element.name in {"h2", "h3", "h4"}:
+            heading = element.get_text(" ", strip=True) or heading
+            continue
+        if element.name == "strong":
+            text = element.get_text(" ", strip=True)
+            if any(
+                token in text.upper()
+                for token in ("480P", "720P", "1080P", "2160P", "4K", "DOWNLOAD")
+            ):
+                heading = text
+            continue
+
+        href = element.get("href", "").strip()
+        if not href.startswith(("http://", "https://")) or href in seen:
+            continue
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if any(
+            host == mirror
+            or host.startswith(f"{mirror}.")
+            or host.endswith(f".{mirror}")
+            or f".{mirror}." in host
+            for mirror in mirror_hosts
+        ):
+            seen.add(href)
+            label = element.get_text(" ", strip=True) or "Download"
+            sections.setdefault(heading, []).append(f'<a href="{href}">{label}</a>')
+
+    if not sections:
+        raise DDLException("Bollyflix: no supported download links found")
+
+    lines = [f"<b>🎬 {title}</b>"]
+    for section, links in sections.items():
+        lines.extend(["", f"<b>{section}</b>", " | ".join(links)])
+    return "\n".join(lines)
+
+
+async def hdwebmovies(url: str) -> str:
+    """
+    Scrape HDWebMovies pages for TMBCloud quality and episode links.
+
+    Movie pages expose ``download`` URLs, while series pages also expose
+    ``drivepacks.php`` URLs whose pages contain individual episode downloads.
+    """
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"HDWebMovies: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else "HDWebMovies"
+    content = soup.select_one("article") or soup.select_one("main") or soup
+    quality_links: dict[str, list[str]] = {}
+    pack_pages: list[str] = []
+    seen: set[str] = set()
+
+    for anchor in content.find_all("a", href=True):
+        href = anchor["href"].strip()
+        if not href.startswith(("http://", "https://")):
+            continue
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if not (host == "tmbcloud.dev" or host == "tmbcloud.lol"):
+            continue
+        label = anchor.get_text(" ", strip=True) or "Download"
+        if "drivepacks.php" in href:
+            if href not in pack_pages:
+                pack_pages.append(href)
+        elif "/download/" in href and href not in seen:
+            seen.add(href)
+            quality_links.setdefault(label, []).append(href)
+
+    for pack_page in pack_pages:
+        try:
+            pack_response = await cf.get(pack_page)
+        except NetworkError as e:
+            raise DDLException(
+                f"HDWebMovies: drive pack unavailable ({type(e).__name__})"
+            ) from e
+        pack_soup = BeautifulSoup(pack_response.text, "html.parser")
+        for anchor in pack_soup.find_all("a", href=True):
+            href = anchor["href"].strip()
+            if "/download/" not in href or href in seen:
+                continue
+            host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+            if host not in {"tmbcloud.dev", "tmbcloud.lol"}:
+                continue
+            seen.add(href)
+            label = anchor.get_text(" ", strip=True) or "Episode"
+            quality_links.setdefault("Drive Pack", []).append(href)
+
+    if not quality_links:
+        raise DDLException("HDWebMovies: no TMBCloud download links found")
+
+    lines = [f"<b>🎬 {title}</b>"]
+    for label, links in quality_links.items():
+        lines.extend(["", f"<b>{label}</b>"])
+        lines.extend(f'<a href="{link}">Download</a>' for link in links)
+    return "\n".join(lines)
+
+
+async def filmyfly(url: str) -> str:
+    """
+    Scrape FilmyFly/FilmyFiy pages through their Linkmake download pages.
+
+    FilmyFly-family posts expose one Linkmake URL. Linkmake then lists the
+    quality/size-labelled filesdl.in mirrors for the title.
+    """
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"FilmyFly: {type(e).__name__}") from e
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else "FilmyFly"
+    linkmake_url = next(
+        (
+            anchor["href"].strip()
+            for anchor in soup.find_all("a", href=True)
+            if (urlparse(anchor["href"]).hostname or "").lower().removeprefix("www.")
+            == "linkmake.in"
+            and "/view/" in anchor["href"]
+        ),
+        None,
+    )
+    if not linkmake_url:
+        raise DDLException("FilmyFly: Linkmake download page not found")
+
+    try:
+        linkmake_response = await cf.get(linkmake_url)
+    except NetworkError as e:
+        raise DDLException(f"FilmyFly: Linkmake unavailable ({type(e).__name__})") from e
+
+    linkmake_soup = BeautifulSoup(linkmake_response.text, "html.parser")
+    links: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for anchor in linkmake_soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        host = (urlparse(href).hostname or "").lower().removeprefix("www.")
+        if (
+            host == "filesdl.in"
+            or host.endswith(".filesdl.in")
+        ) and href not in seen:
+            seen.add(href)
+            label = anchor.get_text(" ", strip=True) or "Download"
+            links.append((label, href))
+
+    if not links:
+        raise DDLException("FilmyFly: no filesdl download links found")
+
+    lines = [f"<b>🎬 {title}</b>", "", "<b>Download Links</b>"]
+    lines.extend(f'<a href="{href}">{label}</a>' for label, href in links)
+    return "\n".join(lines)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

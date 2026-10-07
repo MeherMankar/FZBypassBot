@@ -121,7 +121,12 @@ async def gdflix(url: str) -> str | list:
     }
 
     def _sync_get_file() -> str:
-        r = c.get(url, impersonate="chrome110", timeout=30)
+        r = c.get(
+            url,
+            impersonate="chrome110",
+            timeout=30,
+            allow_redirects=True,
+        )
         if r.status_code != 200:
             raise DDLException(f"GDFlix: HTTP {r.status_code}")
         return r.text
@@ -152,9 +157,6 @@ async def gdflix(url: str) -> str | list:
             continue
         host = urlparse(href).hostname or ""
         if not host or host in EXCLUDED_HOSTS:
-            continue
-        cls = " ".join(a.get("class", []))
-        if "btn" not in cls:
             continue
         if href in seen:
             continue
@@ -407,8 +409,16 @@ async def drivescript(url: str, crypt: str, dtype: str) -> str:
 
         res = rs.get(dlink, timeout=20)
         soup = BeautifulSoup(res.text, "html.parser")
-        gd_data = soup.select('a[class="btn btn-primary btn-user"]')
-        d_link = gd_data[0]["href"] if gd_data else None
+        gd_data = soup.find_all("a", href=True)
+        d_link = next(
+            (
+                anchor["href"].strip()
+                for anchor in gd_data
+                if anchor["href"].strip().startswith(("http://", "https://"))
+                and "drive.google.com" in anchor["href"]
+            ),
+            None,
+        )
 
         parse_txt = (
             f"┏<b>Name:</b> <code>{title}</code>\n"
@@ -442,12 +452,28 @@ async def hubcloud(url: str) -> str:
     Step 2: GET gamerxyt endpoint → parse all download buttons.
     """
     ua = _DESKTOP_UA
+    parsed_url = urlparse(url)
+    source_host = (parsed_url.hostname or "").lower()
+    request_url = (
+        parsed_url._replace(netloc="hubcloud.ist").geturl()
+        if "hubcloud" in source_host.split(".")
+        and source_host != "hubcloud.ist"
+        else url
+    )
     try:
-        r1 = await http.get(url, headers={"User-Agent": ua}, timeout=_LONG_TIMEOUT)
+        r1 = await http.get(
+            request_url,
+            headers={"User-Agent": ua},
+            timeout=_LONG_TIMEOUT,
+        )
     except NetworkError as e:
         raise DDLException(f"HubCloud: step 1 failed — {type(e).__name__}") from e
 
-    m = _re.search(r"var url = '(https://gamerxyt\.com/hubcloud\.php[^']+)'", r1.text)
+    m = _re.search(
+        r"""(?:var\s+url|["']url["'])\s*[:=]\s*["'](https?://[^"']+/hubcloud\.php[^"']*)["']""",
+        r1.text,
+        _re.IGNORECASE,
+    )
     if m:
         ajax_url = m.group(1)
     else:
@@ -476,8 +502,7 @@ async def hubcloud(url: str) -> str:
     size_text = size_el.text.strip() if size_el else "Unknown"
 
     EXCLUDED_HOSTS = {
-        "hubcloud.ist", "hubcloud.cx", "hubcloud.club", "hubcloud.fans",
-        "hubcloud.lat", "gamerxyt.com", "tinyurl.com", "t.me",
+        "gamerxyt.com", "tinyurl.com", "t.me",
         "snvhost.com", "one.one.one.one", "hdhub4u.ms", "www.google.com",
     }
 
@@ -499,6 +524,8 @@ async def hubcloud(url: str) -> str:
             return "Hbplay Server"
         if "instant.busycdn" in host:
             return "Instant DL"
+        if "ddl2." in host:
+            return "ZipDisk Server"
         return host.replace("www.", "").split(".")[0].capitalize() + " Server"
 
     seen: set[str] = set()
@@ -508,13 +535,10 @@ async def hubcloud(url: str) -> str:
         if not href.startswith("https://"):
             continue
         host = urlparse(href).hostname or ""
-        if not host or host in EXCLUDED_HOSTS:
+        if not host or host in EXCLUDED_HOSTS or "hubcloud" in host.split("."):
             continue
         # Skip Telegram bot links and watch/online buttons
         if "hubcloud.ist/tg/" in href:
-            continue
-        cls = " ".join(a.get("class", []))
-        if "btn" not in cls:
             continue
         # Skip watch/online buttons
         page_text_raw = a.get_text(strip=True).lower()
@@ -745,7 +769,8 @@ async def sharer_scraper(url: str) -> str:
     except NetworkError as e:
         raise DDLException(f"sharer_scraper: follow-up GET failed — {type(e).__name__}") from e
 
-    drive_links = etree.HTML(r2.content).xpath("//a[contains(@class,'btn')]/@href")
-    if drive_links and "drive.google.com" in drive_links[0]:
-        return drive_links[0]
+    drive_links = etree.HTML(r2.content).xpath("//a[@href]/@href")
+    for drive_link in drive_links:
+        if drive_link.startswith(("http://", "https://")) and "drive.google.com" in drive_link:
+            return drive_link
     raise DDLException("sharer_scraper: Drive Link not found, Try in your browser")

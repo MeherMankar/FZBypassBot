@@ -25,9 +25,10 @@
 - Inline Bypass (use anywhere — enable via BotFather → Inline Mode)
 - **Channel Auto-Bypass** — bot edits channel posts in-place, replacing links silently
 - **PROXY_URL** — residential proxy rotation for sites that block datacenter IPs
+- HubCloud aliases are detected automatically from the exact `hubcloud` hostname label and routed through the canonical endpoint when needed
 - **PEAK_API_KEY** — pure-HTTP Turnstile solving via Peak.fo for srnky.com / clksz.com / oii.la (proxy optional)
 - Keep-alive ping every 10 min (prevents Render free tier sleep)
-- Corrupt session auto-cleanup on startup
+- SQLite session files are left intact for SQLite's own WAL recovery
 
 ---
 
@@ -71,6 +72,7 @@
 | `thinfi.com` | Untested | — |
 | `try2link.com` | Untested | — |
 | `vplink.in` · `vplinks.in` | Working | 02-10-2026 |
+| `arolinks.com` | Working (partner-chain resolver; Telegram deep links) | 07-10-2026 |
 
 </details>
 
@@ -106,9 +108,25 @@
 | `archive.toonworld4all.me` | Working | 30-09-2026 |
 | `dotflix.store` · `dtflix.ink` | Working | 02-10-2026 |
 | `eonmovies.click` (`/dl/` · `/links/`) | Working | 02-10-2026 |
+| `extraflix.mobi` | Working (Linkshub/DriveHub mirrors) | 07-10-2026 |
+| `bollyflix.gd` · `bollyflix.in` · `bollyflix.com` | In progress (DDL mirror scraper; unverified) | 07-10-2026 |
+| `hdwebmovies.live` | Working (TMBCloud quality/episode scraper) | 07-10-2026 |
+| `filmyfly.army` · `filmyfly.io` · `filmyfly.in` · `filmyfly.com` | Working (Linkmake/filesdl scraper) | 07-10-2026 |
+| `filmyfiy.mov` | In progress (FilmyFly-compatible Linkmake/filesdl scraper; live host reset) | 07-10-2026 |
+| `filmycab.fyi` | In progress (FilmyFly-compatible Linkmake/filesdl scraper; live host reset) | 07-10-2026 |
+| `*.drivehub.dad` | Peak Turnstile secure-mirror resolver (live flow unverified) | 07-10-2026 |
+| `*.vifix.site/file/...` | Working (delegates to matching `new4.gdflix.io` file) | 07-10-2026 |
+| `link.xdmovies.wtf` | Peak Turnstile attempted; downstream still Cloudflare-protected | 07-10-2026 |
+| `buzzheavier.com` | Working (`/download` + `Hx-Redirect`) | 07-10-2026 |
+| `vikingfile.com` | Peak Turnstile resolver | 07-10-2026 |
+| `extralink.cc` | Working (`/download` session + `/wk` redirect) | 07-10-2026 |
+| `links.linkshub.fun` | Working (DriveHub/HubDrive mirror scraper) | 07-10-2026 |
+| `katlinks.in` | Working (WordPress mirror scraper) | 07-10-2026 |
+| `hubcdn.club` · `hubcdn.wiki` | Working (encoded R2 redirect) | 07-10-2026 |
+| `vcloud.fit` · `vcloud.beer` | Working (double-encoded token/R2 mirror) | 07-10-2026 |
 | `azonahub.biz` (TOXcloud — `cloud.azonahub.biz` · `short.azonahub.biz`) | Working | 02-10-2026 |
 | `hblinks.lol` | Working | 27-09-2026 |
-| `hdhub4u.*` | Working | 27-09-2026 |
+| `hdhub4u.*` | Working (new1 timeout fallback to new2) | 07-10-2026 |
 | `kayoanime.com` | Untested | — |
 | `skymovieshd.*` | Untested | — |
 | `toonworld4all.*` | Untested | — |
@@ -155,6 +173,14 @@ still handles the recorded flow, not that the live site still matches it.
 Contributor instructions for adding fixtures and running manual checks are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Session database recovery
+
+If startup reports `sqlite3.OperationalError: no such table: version`, stop the
+bot and preserve the existing session files by renaming `FZ.session`,
+`FZ.session-shm`, and `FZ.session-wal` together (only files that exist). Start
+the bot again to create a fresh bot session. Do not remove WAL/SHM files while
+the bot is running; SQLite uses them to recover pending database changes.
+
 ---
 
 ## ***How It Works***
@@ -163,11 +189,27 @@ Most shorteners gate the destination URL behind one of a few patterns. Each has 
 
 **Referer trick** — `earnlinks.in`, `shrinkme.click` and similar sites only serve the download form to visitors arriving from a specific referrer domain. Sending the correct `Referer` header bypasses the ad redirect entirely and loads the form directly.
 
-**learn_more.php chain** (`vplink.in`) — vplink routes visitors through a multi-hop chain across partner ad sites (`techmint.in` → `onlinewish.in`) via successive `learn_more.php` calls. The bot follows each hop in sequence, collecting session cookies along the way, until the final vplink page with the `go-link` form appears.
+**learn_more.php chain** (`vplink.in`, `arolinks.com`) — the shortener routes visitors through partner ad sites via successive `learn_more.php` calls. The bot follows partner redirects while retaining session cookies, then submits the final shortener's `go-link` form after its counter, or returns an available `gt-link` destination. Manual ad clicks are not automated; if a partner page requires them, the resolver reports a failure instead. Arolinks' Telegram deep-link flow was live-verified on 07-10-2026.
 
 **wpSafeLink chain** (`shortxlinks.in`) — A two-stage WordPress plugin chain through `thetechhint.in` and `distancedata.in`. Each stage POSTs a signed `newwpsafelink` token, waits the server-enforced minimum timer (~15s), then follows a `linkr` redirect to the next stage. Each redirect domain is validated against a known trusted-domain list to catch chain changes early.
 
 **adLinkFly + Turnstile** (`srnky.com`, `clksz.com`, `oii.la`) — Cloudflare Turnstile gates the ad form. The bot solves it via [Peak.fo](https://peak.fo), posts to `advertisingcamps.com`, registers the ad visit on `loanbixby.com`, then posts back to the shortener to receive the signed `ad_form_data` blob for the final `/links/go` call. The same proxy is bound to both the Turnstile solve and all downstream requests to avoid token–IP mismatch.
+
+**XDMovie redirect** (`link.xdmovies.wtf`) — The wrapper redirect is followed, then the downstream `latestnewsonline.sbs` request is sent through the Peak-backed Turnstile client with the configured proxy. The current downstream response remains Cloudflare-protected after solving, so no false direct-link result is returned.
+
+**Buzzheavier redirect** (`buzzheavier.com`) — The resolver calls the file's `/download` endpoint and extracts the final CDN URL from the `Hx-Redirect` response header.
+
+**VikingFile Turnstile** (`vikingfile.com/f/...`) — The resolver extracts the page sitekey, solves the Turnstile challenge through Peak using the configured proxy, posts the token back to the file page, and returns the JSON `link` value.
+
+**ExtraLink session redirect** (`extralink.cc/file/...`) — The resolver follows the file page's session redirect, waits for the server timer, then calls `/wk/<id>` with the page referer and returns the final CDN location.
+
+**Linkshub mirrors** (`links.linkshub.fun/view/...`) — The scraper extracts DriveHub and HubDrive mirrors from a Linkshub view page.
+
+**KatLinks mirrors** (`katlinks.in/archives/...`) — The scraper extracts Send, GDFlix, FilePress/Filebee, Gkyfilehost, and related download mirrors from KatLinks WordPress posts.
+
+**HubCDN redirect** (`hubcdn.club/file/...`, `hubcdn.wiki/file/...`) — The resolver decodes the page's `reurl` payload and returns the embedded public R2 object URL.
+
+**VCloud token flow** (`vcloud.fit/...`, `vcloud.beer/...`) — The resolver decodes the double-base64 token URL, follows the tokenized page, and returns its signed R2 mirror.
 
 **Token flow** (`aylink.co`, `cpmlink.pro`) — These expose a `/get/tk` endpoint that issues a session key from three time-based tokens in the landing page. The bot fetches the session key then posts a fake browser interaction signal to `/links/go2` to receive the destination URL.
 

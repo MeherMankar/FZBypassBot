@@ -1,4 +1,4 @@
-"""
+﻿"""
 Bypass resolver functions — shortener / direct-link extraction.
 
 HTTP architecture
@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json as _json
 import re as _re
-from asyncio import sleep as asleep, to_thread as _to_thread
-from urllib.parse import quote, urlparse
+from asyncio import sleep as asleep
+from asyncio import to_thread as _to_thread
+from html import unescape as _html_unescape
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -26,11 +28,11 @@ from curl_cffi.requests import Session as cSession
 from requests import Session  # synchronous — only used inside terabox WAP path
 
 from FZBypass import Config
+from FZBypass.bypass.recaptcha import recaptchaV3
 from FZBypass.core.exceptions import DDLException, ResolverStepError
-from FZBypass.core.networking import cf, http
+from FZBypass.core.networking import cf, http, ts
 from FZBypass.core.networking.client import DEFAULT_TIMEOUT
 from FZBypass.core.networking.exceptions import NetworkError
-from FZBypass.bypass.recaptcha import recaptchaV3
 
 # ── Shared httpx timeout override for short-lived shortener pages ─────────────
 _SHORT_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=15.0, pool=10.0)
@@ -72,7 +74,6 @@ async def _retry(coro_fn, *args, attempts: int = 2, **kwargs):
 # ═══════════════════════════════════════════════════════════════════════════════
 # FILE HOSTER RESOLVERS
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def yandex_disk(url: str) -> str:
     """
     Uses cfscrape (via adapter) — Yandex Cloud API requires
@@ -372,7 +373,6 @@ async def terabox(url: str) -> list:
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHORTENER RESOLVERS (httpx-based)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def try2link(url: str) -> str:
     """
     try2link.com — now a pure-JS SPA (React), not bypassable via HTTP.
@@ -804,7 +804,6 @@ async def transcript(url: str, DOMAIN: str, ref: str, sltime: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # REMAINING RESOLVERS (cfscrape or requests — documented reasons)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def justpaste(url: str) -> str:
     """Uses curl_cffi — justpaste.it blocks cfscrape with NetworkConnectionError."""
     def _run_sync() -> str:
@@ -1079,6 +1078,338 @@ async def shorter(url: str) -> str:
     return location
 
 
+async def buzzheavier(url: str) -> str:
+    """Resolve a Buzzheavier file page through its redirect endpoint."""
+    download_url = url.rstrip("/") + "/download"
+    try:
+        resp = await http.get(
+            download_url,
+            follow_redirects=False,
+            timeout=_SHORT_TIMEOUT,
+        )
+    except NetworkError as e:
+        raise DDLException(f"Buzzheavier: {type(e).__name__}") from e
+
+    destination = (
+        resp.headers.get("Hx-Redirect")
+        or resp.headers.get("hx-redirect")
+        or resp.headers.get("Location")
+        or resp.headers.get("location")
+    )
+    if not destination:
+        raise DDLException("Buzzheavier: no download redirect found")
+    return destination
+
+
+async def vikingfile(url: str) -> str:
+    """Solve VikingFile's Turnstile gate and extract its JSON download link."""
+    if not Config.PEAK_API_KEY:
+        raise DDLException(
+            "VikingFile: PEAK_API_KEY is required for Turnstile solving"
+        )
+    proxy = Config.next_proxy()
+    if not proxy:
+        raise DDLException("VikingFile: a configured proxy is required")
+
+    def _run_sync() -> str:
+        session = Session()
+        session.proxies.update({"http": proxy, "https": proxy})
+        session.headers.update({"User-Agent": _MOBILE_UA})
+        try:
+            page = session.get(url, timeout=30)
+            page.raise_for_status()
+            sitekey_m = _re.search(
+                r"sitekey\s*:\s*['\"]([^'\"]+)['\"]", page.text
+            )
+            if not sitekey_m:
+                raise DDLException("VikingFile: Turnstile sitekey not found")
+
+            solve_url = url if url.endswith("/") else url + "/"
+            peak = session.post(
+                "https://api.peak.fo/solve",
+                headers={"X-API-Key": Config.PEAK_API_KEY},
+                json={
+                    "task_type": "turnstiletask",
+                    "url": solve_url,
+                    "sitekey": sitekey_m.group(1),
+                    "proxy": proxy,
+                },
+                timeout=90,
+            )
+            peak.raise_for_status()
+            peak_data = peak.json()
+            token = (peak_data.get("data") or {}).get("token")
+            if not peak_data.get("success") or not token:
+                raise DDLException(
+                    f"VikingFile: Peak solve failed — "
+                    f"{peak_data.get('error', peak_data)}"
+                )
+
+            result = session.post(
+                page.url,
+                data={"cf-turnstile-response": token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30,
+            )
+            result.raise_for_status()
+            data = result.json()
+            link = data.get("link")
+            if not link:
+                raise DDLException(
+                    f"VikingFile: download link missing — "
+                    f"{data.get('error', data)}"
+                )
+            return link
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"VikingFile: {type(e).__name__} — {e}") from e
+
+    return await _to_thread(_run_sync)
+
+
+async def drivehub(url: str) -> str:
+    """Solve DriveHub's Turnstile gate and resolve its secure mirror link."""
+    if not Config.PEAK_API_KEY:
+        raise DDLException("DriveHub: PEAK_API_KEY is required for Turnstile solving")
+    proxy = Config.next_proxy()
+    if not proxy:
+        raise DDLException("DriveHub: a configured proxy is required")
+
+    def _run_sync() -> str:
+        session = Session()
+        session.proxies.update({"http": proxy, "https": proxy})
+        session.headers.update({"User-Agent": _MOBILE_UA})
+        try:
+            page = session.get(url, timeout=30)
+            page.raise_for_status()
+            sitekey_m = _re.search(r'data-sitekey="([^"]+)"', page.text)
+            page_token_m = _re.search(r"const pageToken = '([^']+)'", page.text)
+            if not sitekey_m or not page_token_m:
+                raise DDLException("DriveHub: Turnstile parameters not found")
+
+            peak = session.post(
+                "https://api.peak.fo/solve",
+                headers={"X-API-Key": Config.PEAK_API_KEY},
+                json={
+                    "task_type": "turnstiletask",
+                    "url": page.url,
+                    "sitekey": sitekey_m.group(1),
+                    "proxy": proxy,
+                },
+                timeout=90,
+            )
+            peak.raise_for_status()
+            peak_data = peak.json()
+            token = (peak_data.get("data") or {}).get("token")
+            if not peak_data.get("success") or not token:
+                raise DDLException(
+                    f"DriveHub: Peak solve failed — "
+                    f"{peak_data.get('error', peak_data)}"
+                )
+
+            verify = session.post(
+                f"{page.url.rstrip('/')}/ajax.php?ajax=verify-captcha",
+                json={
+                    "token": token,
+                    "id": urlparse(page.url).path.rstrip("/").split("/")[-1],
+                    "pt": page_token_m.group(1),
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+            verify.raise_for_status()
+            verified = verify.json()
+            if not verified.get("success") or not verified.get("secure_token"):
+                raise DDLException(
+                    f"DriveHub: captcha verification failed — "
+                    f"{verified.get('message', verified)}"
+                )
+
+            secure_token = verified["secure_token"]
+            targets = _re.findall(r'data-target="([^"]+)"', verified.get("html", ""))
+            for target in ["instant", "r2", "gdrive", "hubcloud", *targets]:
+                response = session.post(
+                    page.url,
+                    data={
+                        "ajax_secure_action": "resolve_mirror",
+                        "secure_token": secure_token,
+                        "target": target,
+                    },
+                    headers={"X-Requested-With": "XMLHttpRequest"},
+                    timeout=30,
+                )
+                if response.ok:
+                    resolved = response.json()
+                    if resolved.get("url"):
+                        return resolved["url"]
+
+            raise DDLException("DriveHub: no secure mirror URL returned")
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"DriveHub: {type(e).__name__}") from e
+
+    return await _to_thread(_run_sync)
+
+
+async def extralink(url: str) -> str:
+    """Resolve ExtraLink file pages through their session-bound /wk endpoint."""
+    def _run_sync() -> str:
+        import time
+
+        session = Session()
+        session.headers.update({"User-Agent": _MOBILE_UA})
+        try:
+            page = session.get(url, timeout=30, allow_redirects=True)
+            page.raise_for_status()
+            parsed = urlparse(str(page.url))
+            server_id = parse_qs(parsed.query).get("id", [None])[0]
+            if not server_id:
+                raise DDLException("ExtraLink: download session ID not found")
+
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            time.sleep(5)
+            response = session.get(
+                f"{base}/wk/{server_id}",
+                timeout=30,
+                allow_redirects=False,
+                headers={"Referer": str(page.url)},
+            )
+            location = response.headers.get("Location") or response.headers.get(
+                "location"
+            )
+            if not location:
+                raise DDLException("ExtraLink: no direct download redirect found")
+            if location.rstrip("/").endswith("/404"):
+                raise DDLException("ExtraLink: file is unavailable")
+            return urljoin(base, location)
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"ExtraLink: {type(e).__name__} — {e}") from e
+
+    return await _to_thread(_run_sync)
+
+
+async def hubcdn(url: str) -> str:
+    """Extract the encoded R2 object URL from a HubCDN redirect page."""
+    import base64
+
+    try:
+        response = await cf.get(url)
+    except NetworkError as e:
+        raise DDLException(f"HubCDN: {type(e).__name__}") from e
+
+    match_reurl = _re.search(r'var\s+reurl\s*=\s*["\']([^"\']+)', response.text)
+    if not match_reurl:
+        raise DDLException("HubCDN: redirect URL not found")
+
+    encoded = parse_qs(urlparse(match_reurl.group(1)).query).get("r", [""])[0]
+    if not encoded:
+        raise DDLException("HubCDN: encoded destination not found")
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as e:
+        raise DDLException("HubCDN: invalid encoded destination") from e
+
+    destination = parse_qs(urlparse(decoded).query).get("link", [""])[0]
+    if not destination.startswith(("http://", "https://")):
+        raise DDLException("HubCDN: direct destination not found")
+    return destination
+
+
+async def vcloud(url: str) -> str:
+    """Resolve VCloud's double-base64 token page to a direct mirror."""
+    import base64
+
+    try:
+        first = await cf.get(url)
+        token_match = _re.search(
+            r"var\s+url\s*=\s*atob\s*\(\s*atob\s*\(\s*['\"]([^'\"]+)",
+            first.text,
+        )
+        if not token_match:
+            raise DDLException("VCloud: token URL not found")
+        token_url = base64.b64decode(
+            base64.b64decode(token_match.group(1))
+        ).decode("utf-8")
+        second = await cf.get(token_url)
+    except NetworkError as e:
+        raise DDLException(f"VCloud: {type(e).__name__}") from e
+    except (ValueError, UnicodeDecodeError) as e:
+        raise DDLException("VCloud: invalid encoded token URL") from e
+
+    soup = BeautifulSoup(second.text, "html.parser")
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        host = (urlparse(href).hostname or "").lower()
+        if host.endswith(".r2.dev") or host.endswith(".r2.cloudflarestorage.com"):
+            return href
+
+    direct_match = _re.search(
+        r"var\s+url\s*=\s*['\"](https?://[^'\"]+)",
+        second.text,
+    )
+    if direct_match:
+        return direct_match.group(1)
+    raise DDLException("VCloud: no direct download mirror found")
+
+
+async def xdmovies(url: str) -> str:
+    """
+    Follow XDMovie download wrappers to their downstream destination.
+
+    XDMovie links currently redirect to ``latestnewsonline.sbs``. That
+    downstream host may require a browser/Turnstile challenge, so the
+    Peak-backed Turnstile client is used for the downstream request.
+    """
+    try:
+        resp = await cf.get(url, allow_redirects=False)
+    except NetworkError as e:
+        raise DDLException(f"XDMovie: {type(e).__name__}") from e
+
+    location = resp.headers.get("Location") or resp.headers.get("location")
+    if not location:
+        raise DDLException("XDMovie: no redirect location found")
+
+    host = (urlparse(location).hostname or "").lower().removeprefix("www.")
+    if host == "latestnewsonline.sbs":
+        if not Config.PEAK_API_KEY:
+            raise DDLException(
+                "XDMovie: downstream latestnewsonline.sbs requires "
+                "PEAK_API_KEY for Turnstile solving"
+            )
+        proxy = Config.next_proxy()
+        if not proxy:
+            raise DDLException(
+                "XDMovie: Peak Turnstile solving requires a configured proxy"
+            )
+        try:
+            solved = await ts.get(location, allow_redirects=True, proxy=proxy)
+        except NetworkError as e:
+            raise DDLException(
+                f"XDMovie: Peak Turnstile solve failed "
+                f"({type(e).__name__}: {e})"
+            ) from e
+        final_url = str(solved.url)
+        if "latestnewsonline.sbs" in final_url and (
+            solved.status_code in (403, 429, 503)
+            or "just a moment" in solved.text.lower()
+            or "turnstile" in solved.text.lower()
+        ):
+            raise DDLException(
+                "XDMovie: downstream latestnewsonline.sbs remains "
+                "Cloudflare-protected after Peak solving"
+            )
+        if final_url == location and not solved.text:
+            raise DDLException(
+                "XDMovie: Peak returned an empty downstream response"
+            )
+        return final_url
+    return location
+
+
 async def appurl(url: str) -> str:
     """Uses cfscrape — appurl sites have Cloudflare protection."""
     try:
@@ -1124,248 +1455,195 @@ async def thinfi(url: str) -> str:
 
 
 
+_PARTNER_CHAIN_SHORTENER_HOSTS = {"arolinks.com", "vplink.in", "vplinks.in"}
+
+
+def _is_partner_chain_shortener_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    return host in _PARTNER_CHAIN_SHORTENER_HOSTS
+
+
+def _is_manual_partner_ad_gate(html_text: str) -> bool:
+    page_text = " ".join(BeautifulSoup(html_text, "html.parser").stripped_strings)
+    normalized = " ".join(page_text.casefold().split())
+    has_step_counter = bool(_re.search(r"currently on step\s+\d+\s*/\s*\d+", normalized))
+    requires_ad_click = "click any image" in normalized or "click image" in normalized
+    requires_return = "come back" in normalized or "return to this page" in normalized
+    return has_step_counter and requires_ad_click and requires_return
+
+
+def _extract_vplink_partner_url(html_text: str, page_url: str) -> str | None:
+    def _external_url(raw_url: str) -> str | None:
+        raw_url = _html_unescape(raw_url.strip()).replace("\\/", "/")
+        if raw_url.startswith("//"):
+            raw_url = f"https:{raw_url}"
+
+        candidate = urljoin(page_url, raw_url)
+        parsed = urlparse(candidate)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or not host:
+            return None
+        if host.removeprefix("www.") in _PARTNER_CHAIN_SHORTENER_HOSTS:
+            return None
+        return candidate
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    anchors: list[tuple[int, str]] = []
+    for anchor in soup.find_all("a", href=True):
+        candidate = _external_url(anchor["href"])
+        if candidate:
+            query = parse_qs(urlparse(candidate).query)
+            label = anchor.get_text(" ", strip=True).casefold()
+            priority = 0 if "insurancesstudy" in query else 1 if label == "click here" else 2
+            anchors.append((priority, candidate))
+    if anchors:
+        return min(anchors, key=lambda item: item[0])[1]
+
+    for raw_url in _re.findall(
+        r"""(?:window|document)\.location(?:\.href)?\s*=\s*["']([^"']+)["']""",
+        html_text,
+    ):
+        candidate = _external_url(raw_url)
+        if candidate:
+            return candidate
+    return None
+
+
 async def vplink(url: str) -> str:
     """
-    vplink.in / vplinks.in — pure-HTTP bypass via techmint/onlinewish learn_more.php chain.
+    vplink.in / vplinks.in — bypass via entiredust.in Referer + gt_uc_ cookie.
 
-    Confirmed flow (Oct 2026, discovered via CDP spy + HTTP tracing):
-
-    1. GET vplink.in/<code>
-       → Sets ref<code>, gt_uc_, AppSession cookies on vplink.in
-       → Returns page with <a href="techmint.in/studyinsurances/studyeducations/
-         ?insurancesstudy=<code>&uiso=...">
-
-    2. GET techmint landing (?insurancesstudy=)
-       → Sets PHPSESSID, user_eiop cookies on techmint.in
-       → JS redirect to random techmint article
-
-    3. GET article (to register the session)
-
-    4. Repeat: GET <domain>/<path>/learn_more.php with Referer=<current article>
-       → Returns HTML with document.location.href = '<next URL>'
-       → Follow to next article/landing page
-       Chain: techmint article → techmint landing2 → onlinewish landing
-              → onlinewish landing2 → vplink.in/<code> (final)
-
-    5. Final vplink.in/<code> URL has go-link form with ad_form_data
-       (counter_value=8, same adLinkFly platform as earnlinks)
-
-    6. Wait 8s → POST /links/go → destination
+    The server returns the unlock page (gt-link anchor or go-link form) when
+    the request carries a Chrome TLS fingerprint, the gt_uc_=<code> cookie,
+    and one of the trusted entiredust.in article referers.
     """
-    import time as _time
-    import re as _re2
-    from urllib.parse import urlparse as _up
+    _shortcode = url.rstrip("/").split("/")[-1]
+
+    _REFERERS = [
+        "https://entiredust.in/studyscholorhiipss/top-5-fully-funded-global-enterprise-scholarships-2026/",
+        "https://entiredust.in/studyscholorhiipss/best-fully-funded-us-corporate-universities-2026/",
+        "https://entiredust.in/studyscholorhiipss/top-10-corporate-sponsored-global-universities-2026/",
+        "https://entiredust.in/studyscholorhiipss/best-fully-funded-executive-enterprise-fellowships-canada-2026/",
+        "https://entiredust.in/studyscholorhiipss/top-5-corporate-sponsored-us-universities-2026/",
+        "https://entiredust.in/studyscholorhiipss/top-5-fully-funded-global-corporate-mba-destinations-2026/",
+        "https://entiredust.in/studyscholorhiipss/top-5-sovereign-wealth-funded-global-corporate-scholarships-2026/",
+        "https://darkguruji.com/",  # fallback
+    ]
 
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-    def _get_learn_more(current_url: str) -> str:
-        p = _up(current_url)
-        parts = p.path.strip("/").split("/")
-        prefix = f"/{parts[0]}/" if parts else "/"
-        return f"{p.scheme}://{p.netloc}{prefix}learn_more.php"
+    _DEST_PAT = _re.compile(
+        r"(https?://(?:t\.me|telegram\.me|telegram\.dog|mega\.nz|"
+        r"drive\.google\.com|devuploads\.com|gofile\.io|"
+        r"pixeldrain\.[^'\"\s<>]+|fuckingfast\.[^'\"\s<>]+|"
+        r"unlocktoearn\.[^'\"\s<>]+)[^\s'\"<>]*)"
+    )
+
+    _ANTIBYPASS_HOSTS = {"antibypass.koyeb.app", "avbypassbot.koyeb.app"}
+
+    def _resolve_antibypass(sess_ab, ab_url: str, vplink_referer: str) -> str | None:
+        """Hit antibypass URL with vplink session cookies + referer to extract finalUrl."""
+        try:
+            r_ab = sess_ab.get(
+                ab_url,
+                headers={"User-Agent": _UA, "Referer": vplink_referer},
+                timeout=20,
+            )
+            if r_ab.status_code == 200:
+                m = _re.search(
+                    r'(?:var|let|const)\s+finalUrl\s*=\s*["\x27]([^"\']+)["\x27]',
+                    r_ab.text,
+                )
+                if m:
+                    return m.group(1)
+        except Exception:
+            pass
+        return None
 
     def _run_sync() -> str:
-        import cloudscraper as _cs
-
-        # vplink.in is behind Cloudflare — try without proxy first (works on
-        # residential IPs), fall back to proxy if CF blocks us.
-        proxy = Config.next_proxy()
-        proxies = None
-        if proxy:
-            if proxy.startswith("http"):
-                proxies = {"http": proxy, "https": proxy}
-            else:
-                parts = proxy.split(":")
-                if len(parts) == 4:
-                    h, p, u, pw = parts
-                    proxy_url = f"http://{u}:{pw}@{h}:{p}"
-                else:
-                    proxy_url = f"http://{proxy}"
-                proxies = {"http": proxy_url, "https": proxy_url}
-
-        def _make_sess(use_proxy: bool):
-            s = _cs.create_scraper(
-                browser={"browser": "chrome", "platform": "windows", "mobile": False}
-            )
-            if use_proxy and proxies:
-                s.proxies.update(proxies)
-            s.headers.update({"User-Agent": _UA})
-            return s
-
-        # Try without proxy first, then with proxy
-        sess = None
-        r1 = None
-        for use_proxy in (False, True):
-            if use_proxy and not proxies:
-                break
+        import time as _time
+        for referer in _REFERERS:
             try:
-                _sess = _make_sess(use_proxy)
-                _r1 = _sess.get(url, timeout=30, allow_redirects=True)
-                # Check if we got the real page (has techmint link) vs CF challenge
-                if "techmint.in" in _r1.text or "Please Wait" in _r1.text:
-                    sess = _sess
-                    r1 = _r1
-                    break
+                sess = cSession(impersonate="chrome120")
+                sess.cookies.update({"gt_uc_": _shortcode})
+                page = sess.get(
+                    f"https://vplink.in/{_shortcode}",
+                    headers={
+                        "User-Agent": _UA,
+                        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+                        "Accept-Language": "en-US,en;q=0.5",
+                        "Referer": referer,
+                    },
+                    timeout=30,
+                )
             except Exception:
                 continue
 
-        if r1 is None:
-            # Last resort: just use whatever we get without proxy
-            sess = _make_sess(False)
-            r1 = sess.get(url, timeout=30, allow_redirects=True)
+            if page.status_code != 200:
+                continue
 
-        if r1.status_code != 200:
-            raise DDLException(f"vplink: HTTP {r1.status_code}")
+            page_soup = BeautifulSoup(page.text, "html.parser")
 
-        # Capture vplink.in cookies now — we need to pass them explicitly on the
-        # final return visit (cloudscraper may reset the jar during CF solving).
-        vplink_cookies = {c.name: c.value for c in sess.cookies if "vplink" in (c.domain or "")}
+            # Fast path — destination already in page as a direct link
+            anchor = page_soup.find("a", id="gt-link")
+            if anchor:
+                href = anchor.get("href", "")
+                if href.startswith("http") and "vplink.in" not in href:
+                    # Resolve antibypass URLs inline using the current session
+                    from urllib.parse import urlparse as _up_ab
+                    ab_host = (_up_ab(href).hostname or "").lstrip("www.")
+                    if ab_host in _ANTIBYPASS_HOSTS:
+                        final = _resolve_antibypass(sess, href, f"https://vplink.in/{_shortcode}")
+                        if final:
+                            return final
+                    return href
 
-        # Extract techmint URL — try three methods in order:
-        # 1. <a href> via BeautifulSoup (works on most responses)
-        # 2. Raw href regex (handles HTML-entity encoded &amp; in href)
-        # 3. JS window.location redirect (handles Rocket Loader script mangling)
-        soup1 = BeautifulSoup(r1.text, "html.parser")
-        a_tag = soup1.find("a", href=_re2.compile(r'techmint\.in'))
-        techmint_url = a_tag["href"] if a_tag else None
+            # Standard go-link form
+            unlock_form = page_soup.find("form", id="go-link")
+            if not unlock_form:
+                continue
 
-        if not techmint_url:
-            # Raw regex — handles &amp; entities and Rocket Loader script mangling
-            m_href = _re2.search(
-                r'href=["\x27](https://techmint\.in[^"\']+)["\x27]', r1.text
-            )
-            if m_href:
-                techmint_url = m_href.group(1).replace("&amp;", "&")
+            _time.sleep(7)
 
-        if not techmint_url:
-            # JS redirect — handles escaped slashes from Cloudflare Rocket Loader
-            m_js = _re2.search(
-                r'window\.location(?:\.href)?\s*=\s*["\x27\\]+(https?:\\?/\\?/techmint[^"\'\\]+)',
-                r1.text,
-            )
-            if m_js:
-                techmint_url = m_js.group(1).replace("\\/", "/")
+            form_action = unlock_form.get("action", "")
+            if not form_action.startswith("http"):
+                form_action = f"https://vplink.in{form_action}"
 
-        if not techmint_url:
-            raise DDLException(
-                "vplink: techmint URL not found in page — "
-                "vplink may have changed partner domain"
-            )
+            form_fields = {
+                field["name"]: field.get("value", "")
+                for field in unlock_form.find_all("input")
+                if field.get("name")
+            }
 
-        # ── Step 2: GET techmint landing → set PHPSESSID cookie ───────────────
-        r2 = sess.get(techmint_url, headers={"Referer": url}, timeout=30)
-        if r2.status_code >= 500:
-            raise DDLException(
-                f"vplink: techmint.in is down (HTTP {r2.status_code}) — try again later"
-            )
-        # Handle Rocket Loader: script type is mangled, slashes may be escaped
-        js_m = _re2.search(
-            r'window\.location(?:\.href)?\s*=\s*["\x27\\]+(https?[^"\'\\]+)["\x27]',
-            r2.text,
-        )
-        if not js_m:
-            raise DDLException("vplink: techmint landing JS redirect not found")
-        article_url = js_m.group(1).replace("\\/", "/")
-
-        # ── Step 3: GET first article (register session) ──────────────────────
-        r3 = sess.get(article_url, headers={"Referer": techmint_url}, timeout=30)
-        current_referer = str(r3.url)
-
-        # ── Step 4: Follow learn_more.php chain ────────────────────────────────
-        for _ in range(12):
-            lm_url = _get_learn_more(current_referer)
             try:
-                r_lm = sess.get(lm_url, headers={"Referer": current_referer}, timeout=30)
-            except Exception:
-                break
-
-            if r_lm.status_code != 200:
-                break
-
-            # Extract JS redirect from learn_more.php response
-            # Handle Rocket Loader escaped slashes: "https:\/\/..."
-            js_m2 = _re2.search(
-                r"(?:document|window)\.location(?:\.href)?\s*=\s*[\"'\\]+([^\"'\\]+)",
-                r_lm.text,
-            )
-            if not js_m2:
-                break
-
-            next_url = js_m2.group(1).replace("\\/", "/")
-
-            # ── Final: vplink.in/<code> with go-link form ─────────────────────
-            if "vplink.in" in next_url or "vplinks.in" in next_url:
-                # Pass vplink.in cookies explicitly — ensures refAzaao is sent
-                # even if cloudscraper's jar was partially cleared during CF solving.
-                rf = sess.get(next_url, headers={"Referer": lm_url},
-                              cookies=vplink_cookies, timeout=30)
-                soup_f = BeautifulSoup(rf.text, "html.parser")
-                golink = soup_f.select_one("form#go-link")
-                if not golink:
-                    # Check if it's a CF challenge or the plain redirect page again
-                    if any(k in rf.text for k in ("techmint.in", "Please Wait", "Opening Link")):
-                        # Got the redirect page again — need to follow the chain once more
-                        # The session cookies should be present; try re-fetching once
-                        rf = sess.get(next_url, headers={"Referer": lm_url},
-                                      cookies=vplink_cookies, timeout=15)
-                        soup_f = BeautifulSoup(rf.text, "html.parser")
-                        golink = soup_f.select_one("form#go-link")
-                    if not golink:
-                        raise DDLException(
-                            f"vplink: go-link form not found on final page ({rf.url}) "
-                            f"— page title: {(soup_f.find('title') or '').get_text()[:60] if soup_f.find('title') else rf.text[:100]}"
-                        )
-
-                hidden = {
-                    inp.get("name"): inp.get("value", "")
-                    for inp in golink.find_all("input")
-                    if inp.get("name")
-                }
-                action = golink.get("action") or "/links/go"
-                if not action.startswith("http"):
-                    # Resolve relative action against the final URL's domain
-                    final_domain = _up(str(rf.url)).netloc or "vplink.in"
-                    final_scheme = _up(str(rf.url)).scheme or "https"
-                    action = f"{final_scheme}://{final_domain}{action}"
-
-                counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', rf.text)
-                counter = int(counter_m.group(1)) if counter_m else 8
-                if counter > 0:
-                    _time.sleep(counter + 1)
-
-                r_go = sess.post(
-                    action,
-                    data=hidden,
+                submit = sess.post(
+                    form_action,
+                    data=form_fields,
                     headers={
-                        "Referer": str(rf.url),
+                        "Referer": str(page.url),
                         "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "application/json, */*",
+                        "Content-Type": "application/x-www-form-urlencoded",
                     },
-                    cookies=vplink_cookies,
                     timeout=30,
                 )
-
-                try:
-                    result = _json.loads(r_go.content)
-                except Exception:
-                    raise DDLException(f"vplink: non-JSON response — {r_go.text[:200]}")
-
-                dest = result.get("url")
-                if not dest:
-                    raise DDLException(f"vplink: {result.get('message', 'no URL in response')}")
-                return dest
-
-            # Follow next_url to register visit, then loop back to learn_more
-            try:
-                r_next = sess.get(next_url, headers={"Referer": lm_url}, timeout=30)
-                current_referer = str(r_next.url)
+                payload = _json.loads(submit.content)
+                destination = (
+                    payload.get("url") or payload.get("link") or payload.get("data")
+                )
+                if destination:
+                    return destination
             except Exception:
-                current_referer = next_url
+                pass
 
-        raise DDLException("vplink: learn_more.php chain exhausted without reaching vplink.in")
+            # Last resort: scan HTML for known destination URL patterns
+            match = _DEST_PAT.search(page.text)
+            if match:
+                return match.group(1)
+
+        raise DDLException("vplink: bypass failed — all referers exhausted")
 
     try:
         return await _to_thread(_run_sync)
@@ -1374,6 +1652,203 @@ async def vplink(url: str) -> str:
     except Exception as exc:
         raise DDLException(f"vplink: {type(exc).__name__} — {exc}") from exc
 
+
+async def antibypass(url: str) -> str:
+    """
+    antibypass.koyeb.app / avbypassbot.koyeb.app — MrSagarBots bypass proxy.
+
+    These pages contain: let finalUrl = "https://t.me/..."
+    Accessible with Referer: https://vplink.in/
+    """
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+
+    def _run_sync() -> str:
+        for referer in [
+            "https://vplink.in/",
+            "https://entiredust.in/studyscholorhiipss/top-5-fully-funded-global-enterprise-scholarships-2026/",
+        ]:
+            try:
+                sess = cSession(impersonate="chrome120")
+                r = sess.get(url, headers={"User-Agent": _UA, "Referer": referer}, timeout=20)
+                if r.status_code == 200:
+                    m = _re.search(
+                        r'(?:var|let|const)\s+finalUrl\s*=\s*["\x27]([^"\']+)["\x27]',
+                        r.text,
+                    )
+                    if m:
+                        return m.group(1)
+            except Exception:
+                continue
+        raise DDLException(
+            "antibypass: could not extract finalUrl — must arrive from vplink.in"
+        )
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as exc:
+        raise DDLException(f"antibypass: {type(exc).__name__} — {exc}") from exc
+
+
+async def arolinks(url: str) -> str:
+    """
+    arolinks.com — pure-HTTP bypass via techmint/onlinewish chain + referer trick.
+
+    Confirmed flow (Oct 2026, discovered via CDP spy):
+      1. GET arolinks.com/<code>  → set refXXX + gt_uc_ + AppSession cookies
+      2. GET techmint.in/studyeducations/?universtityeducations=  → article 1
+      3. GET article 1
+      4. GET techmint.in/readmore/  → next landing URL
+      5. GET techmint.in/studyeducations/?educationsscholorships=&pgtr=10&st=2  → article 2
+      6. GET article 2
+      7. GET onlinewish.in/studyblogs/educationsunivrsties/?univrsityinsurances=  → ow article
+      8. GET ow article
+      9. GET onlinewish.in/readmore/  â† establishes onlinewish.in session
+      10. GET arolinks.com/<code> with Referer: https://onlinewish.in/
+          → server returns go-link form or gt-link anchor (no timer!)
+      11. Return gt-link href or POST /links/go
+    """
+    import re as _re2
+    import time as _time
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    )
+    code = url.rstrip("/").split("/")[-1]
+
+    def _run_sync() -> str:
+        import requests as _req
+        import cloudscraper as _cs
+
+        # Use plain requests for the chain (no CF challenges on techmint/onlinewish)
+        s = _req.Session()
+        s.headers.update({"User-Agent": _UA})
+
+        def _js_redirect(text: str) -> str | None:
+            match = _re2.search(
+                r"""(?:window|document)\.location(?:\.href)?\s*=\s*
+                ["']((?:https?:)?(?:\\?/\\?/|//)[^"']+)["']""",
+                text,
+                _re2.IGNORECASE | _re2.VERBOSE,
+            )
+            if not match:
+                return None
+            return match.group(1).replace("\\/", "/")
+
+        # Step 1: GET arolinks → set refXXX + gt_uc_ cookies
+        r1 = s.get(url, timeout=15)
+        if r1.status_code != 200:
+            raise DDLException(f"arolinks: HTTP {r1.status_code}")
+
+        m = _re2.search(r'href=["\x27](https://techmint\.in[^"\']+)["\x27]', r1.text)
+        partner = m.group(1).replace("&amp;", "&") if m else None
+        if not partner:
+            raise DDLException("arolinks: techmint URL not found in page")
+
+        # Step 2: techmint landing 1 → article 1
+        r2 = s.get(partner, headers={"Referer": url}, timeout=30)
+        if r2.status_code >= 500:
+            raise DDLException(f"arolinks: techmint down (HTTP {r2.status_code})")
+        art1 = _js_redirect(r2.text)
+        if not art1:
+            raise DDLException("arolinks: techmint landing 1 JS redirect not found")
+        s.get(art1, headers={"Referer": partner}, timeout=15)
+
+        # Step 3: techmint readmore → second landing
+        r_rm = s.get("https://techmint.in/readmore/", headers={"Referer": art1}, timeout=15)
+        tl2 = _js_redirect(r_rm.text) or \
+              f"https://techmint.in/studyeducations/?educationsscholorships={code}&pgtr=10&st=2"
+
+        # Step 4: techmint landing 2 → article 2
+        r3 = s.get(tl2, headers={"Referer": art1}, timeout=15)
+        art2 = _js_redirect(r3.text) or art1
+        s.get(art2, headers={"Referer": tl2}, timeout=15)
+
+        # Step 5: onlinewish landing → article
+        ow1 = f"https://onlinewish.in/studyblogs/educationsunivrsties/?univrsityinsurances={code}"
+        r4 = s.get(ow1, headers={"Referer": art2}, timeout=15)
+        ow_art = _js_redirect(r4.text)
+        if ow_art:
+            s.get(ow_art, headers={"Referer": ow1}, timeout=15)
+
+        # Step 6: onlinewish readmore — establishes onlinewish.in domain session
+        s.get("https://onlinewish.in/readmore/",
+              headers={"Referer": ow_art or ow1}, timeout=15)
+
+        # Step 7: hit arolinks with onlinewish.in referer via cloudscraper
+        # (CF challenge requires browser-like TLS fingerprint)
+        sess = _cs.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+        # Transfer arolinks cookies to cloudscraper session
+        for cookie in s.cookies:
+            if "arolinks" in (cookie.domain or ""):
+                sess.cookies.set(cookie.name, cookie.value, domain=cookie.domain)
+        # Also set by name for cookies without domain info
+        for name in ("refNqtedK", f"ref{code}", "gt_uc_", "AppSession"):
+            val = s.cookies.get(name)
+            if val:
+                sess.cookies.set(name, val, domain="arolinks.com")
+
+        rf = sess.get(url, headers={"Referer": "https://onlinewish.in/",
+                                    "User-Agent": _UA}, timeout=30)
+        if rf.status_code != 200:
+            raise DDLException(f"arolinks: final page HTTP {rf.status_code}")
+
+        soup_f = BeautifulSoup(rf.text, "html.parser")
+
+        # Fast path: gt-link anchor already has destination
+        gt_link = soup_f.find("a", id="gt-link",
+                              href=lambda h: h and h.startswith("http"))
+        if gt_link:
+            return gt_link["href"]
+
+        # Standard go-link form
+        golink = soup_f.select_one("form#go-link")
+        if not golink:
+            raise DDLException(
+                f"arolinks: go-link form not found on final page — "
+                "onlinewish.in session may not have been established"
+            )
+        hidden = {
+            inp.get("name"): inp.get("value", "")
+            for inp in golink.find_all("input")
+            if inp.get("name")
+        }
+        action = golink.get("action") or "/links/go"
+        if not action.startswith("http"):
+            action = f"https://arolinks.com{action}"
+
+        counter_m = _re2.search(r'"counter_value"\s*:\s*(\d+)', rf.text)
+        counter = int(counter_m.group(1)) if counter_m else 0
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        r_go = sess.post(
+            action, data=hidden,
+            headers={"Referer": str(rf.url), "X-Requested-With": "XMLHttpRequest"},
+            timeout=20,
+        )
+        try:
+            result = _json.loads(r_go.content)
+        except Exception:
+            raise DDLException(f"arolinks: non-JSON response — {r_go.text[:200]}")
+        dest = result.get("url")
+        if not dest:
+            raise DDLException(f"arolinks: {result.get('message', 'no URL in response')}")
+        return dest
+
+    try:
+        return await _to_thread(_run_sync)
+    except DDLException:
+        raise
+    except Exception as exc:
+        raise DDLException(f"arolinks: {type(exc).__name__} — {exc}") from exc
 async def greenmotors(url: str) -> str:
     """
     greenmotors.club shortener bypass — pure HTTP, no browser.
@@ -1446,7 +1921,6 @@ async def greenmotors(url: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # FILE HOSTER RESOLVERS — batch 2
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def pixeldrain(url: str) -> str:
     """
     Pixeldrain direct link generator.

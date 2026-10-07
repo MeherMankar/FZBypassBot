@@ -23,25 +23,117 @@ fmed_list = [
 
 
 def is_share_link(url):
-    return bool(
-        match(
-            r"https?:\/\/.+\.(gdtot|filepress|pressbee|gdflix)\.\S+|https?:\/\/(gdflix|filepress|pressbee|onlystream|filebee|appdrive)\.\S+",
-            url,
+    host = urlparse(url).hostname
+    return any(
+        _has_host_label(host, label)
+        for label in (
+            "gdtot",
+            "filepress",
+            "pressbee",
+            "gdflix",
+            "onlystream",
+            "filebee",
+            "appdrive",
         )
     )
 
 
 def is_excep_link(url):
-    return bool(
-        match(
-            r"https?:\/\/.+\.(1tamilmv|gdtot|filepress|pressbee|gdflix|sharespark)\.\S+|https?:\/\/(sharer|onlystream|hubdrive|hubcloud|katdrive|drivefire|skymovieshd|toonworld4all|kayoanime|cinevood|gdflix|filepress|pressbee|filebee|appdrive|hdhub4u|4khdhub)\.\S+",
-            url,
+    host = urlparse(url).hostname
+    return any(
+        _has_host_label(host, label)
+        for label in (
+            "1tamilmv",
+            "gdtot",
+            "filepress",
+            "pressbee",
+            "gdflix",
+            "sharespark",
+            "sharer",
+            "onlystream",
+            "hubdrive",
+            "hubcloud",
+            "katdrive",
+            "drivefire",
+            "skymovieshd",
+            "toonworld4all",
+            "kayoanime",
+            "cinevood",
+            "filebee",
+            "appdrive",
+            "hdhub4u",
+            "hdstream4u",
+            "4khdhub",
         )
     )
 
 
+def _has_host_label(host: str | None, label: str) -> bool:
+    """Match a provider label without assuming its subdomain or TLD."""
+    return label in (host or "").lower().split(".")
+
+
 async def direct_link_checker(link, onlylink=False):
     domain = urlparse(link).hostname
+
+    # R2 public buckets expose the file directly and must not be sent through
+    # another resolver after a shortener returns them.
+    if domain and (
+        domain.endswith(".r2.dev")
+        or domain.endswith(".r2.cloudflarestorage.com")
+    ):
+        return link
+
+    # Provider sites use rotating subdomains and TLDs. Match their exact
+    # hostname labels before legacy domain-specific regular expressions.
+    if _has_host_label(domain, "hdstream4u"):
+        return await hdstream4u(link)
+    if _has_host_label(domain, "hdhub4u"):
+        return await hdhub4u(link)
+    if _has_host_label(domain, "4khdhub"):
+        return await fourkhdhub(link)
+    if _has_host_label(domain, "hubcloud"):
+        return await hubcloud(link)
+    if _has_host_label(domain, "hubdrive"):
+        return await drivescript(link, Config.HUBDRIVE_CRYPT, "HubDrive")
+    if _has_host_label(domain, "drivehub"):
+        return await drivehub(link)
+    if _has_host_label(domain, "katdrive"):
+        return await drivescript(link, Config.KATDRIVE_CRYPT, "KatDrive")
+    if _has_host_label(domain, "drivefire"):
+        return await drivescript(link, Config.DRIVEFIRE_CRYPT, "DriveFire")
+    if _has_host_label(domain, "gdflix"):
+        return await gdflix(link)
+    if _has_host_label(domain, "vifix"):
+        vifix_path = urlparse(link).path
+        if vifix_path.startswith("/file/"):
+            gdflix_url = f"https://new4.gdflix.io{vifix_path}"
+            return await gdflix(gdflix_url)
+        raise DDLException("Vifix: unsupported URL format")
+    if _has_host_label(domain, "filepress"):
+        return await filepress(link)
+    if _has_host_label(domain, "pressbee"):
+        return await filepress(link)
+    if _has_host_label(domain, "appdrive"):
+        return await appflix(link)
+    if _has_host_label(domain, "cinevood"):
+        return await cinevood(link)
+    if _has_host_label(domain, "hblinks"):
+        return await hblinks(link)
+    if _has_host_label(domain, "nexdrive"):
+        return await nexdrive(link)
+    if _has_host_label(domain, "kayoanime"):
+        return await kayoanime(link)
+    if _has_host_label(domain, "toonworld4all"):
+        return await toonworld4all(link)
+    if _has_host_label(domain, "skymovieshd"):
+        return await skymovieshd(link)
+    if _has_host_label(domain, "sharespark"):
+        return await sharespark(link)
+    if _has_host_label(domain, "1tamilmv"):
+        return await tamilmv(link)
+    if _has_host_label(domain, "greenmotors"):
+        return await greenmotors(link)
 
     # File Hoster Links
     if bool(match(r"https?:\/\/(yadi|disk.yandex)\.\S+", link)):
@@ -51,7 +143,7 @@ async def direct_link_checker(link, onlylink=False):
     elif bool(match(r"https?:\/\/shrdsk\.\S+", link)):
         return await shrdsk(link)
     elif any(
-        x in domain
+        x in (domain or "")
         for x in [
             "1024tera",
             "terabox",
@@ -110,8 +202,14 @@ async def direct_link_checker(link, onlylink=False):
         blink = await shortxlinks(link)
     elif bool(match(r"https?:\/\/(srnky\.com|clksz\.com|oii\.la)\S+", link)):
         blink = await srnky(link)
-    elif bool(match(r"https?:\/\/(vplink|vplinks)\.in\S*", link)):
+    elif bool(
+        match(r"https?:\/\/(?:vplink|vplinks)\.in\S*", link)
+    ):
         blink = await vplink(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?arolinks\.com\S*", link)):
+        blink = await arolinks(link)
+    elif bool(match(r"https?:\/\/(?:antibypass|avbypassbot)\.koyeb\.app\S*", link)):
+        blink = await antibypass(link)
     elif bool(match(r"https?:\/\/(www\.)?gplinks\.(co|in)\S*", link)):
         blink = await gplinks(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
@@ -124,8 +222,24 @@ async def direct_link_checker(link, onlylink=False):
         blink = await linkvertise(link)
     elif bool(match(r"https?:\/\/rslinks\.\S+", link)):
         blink = await rslinks(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?buzzheavier\.com\/\S+", link)):
+        blink = await buzzheavier(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?vikingfile\.com\/f\/\S+", link)):
+        blink = await vikingfile(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?extralink\.cc\/file\/\S+", link)):
+        blink = await extralink(link)
+    elif bool(match(r"https?:\/\/links\.linkshub\.fun\/view\/\S+", link)):
+        return await linkshub(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?katlinks\.in\/archives\/\S+", link)):
+        return await katlinks(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?hubcdn\.(?:club|wiki)\/file\/\S+", link)):
+        blink = await hubcdn(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?vcloud\.(?:fit|beer)\/\S+", link)):
+        blink = await vcloud(link)
     elif bool(match(r"https?:\/\/(bit\.ly|tinyurl\.com|(.+\.)short\.\S+|shorturl\.at|t\.ly)\S*", link)):
         blink = await shorter(link)
+    elif bool(match(r"https?:\/\/(?:link\.)?xdmovies\.wtf\/download\/\S+", link, flags=2)):
+        blink = await xdmovies(link)
     elif bool(match(r"https?:\/\/appurl\.\S+", link)):
         blink = await appurl(link)
     elif bool(match(r"https?:\/\/surl\.\S+", link)):
@@ -166,8 +280,26 @@ async def direct_link_checker(link, onlylink=False):
         return await hblinks(link)
     elif bool(match(r"https?:\/\/(.+\.)?cinevood\.\S+", link)):
         return await cinevood(link)
+    elif bool(match(r"https?:\/\/(?:.+\.)?hdstream4u\.\S+", link)):
+        return await hdstream4u(link)
     elif bool(match(r"https?:\/\/.+\.hdhub4u\.\S+|https?:\/\/hdhub4u\.\S+", link)):
         return await hdhub4u(link)
+
+    elif bool(match(r"https?:\/\/(?:[a-z0-9-]+\.)?extraflix\.mobi\S+", link, flags=2)):
+        return await extraflix(link)
+
+    elif bool(match(r"https?:\/\/(?:[a-z0-9-]+\.)?bollyflix\.(?:gd|in|com)\S+", link, flags=2)):
+        return await bollyflix(link)
+
+    elif bool(match(r"https?:\/\/(?:[a-z0-9-]+\.)?hdwebmovies\.live\S+", link, flags=2)):
+        return await hdwebmovies(link)
+
+    elif bool(match(r"https?:\/\/(?:[a-z0-9-]+\.)?filmyfly\.(?:army|io|in|com)\S+", link, flags=2)):
+        return await filmyfly(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?filmyfiy\.mov\/\S+", link, flags=2)):
+        return await filmyfly(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?filmycab\.fyi\/\S+", link, flags=2)):
+        return await filmyfly(link)
 
     elif bool(match(r"https?:\/\/4khdhub\.\S+", link)):
         return await fourkhdhub(link)
