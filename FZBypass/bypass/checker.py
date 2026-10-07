@@ -212,6 +212,8 @@ async def direct_link_checker(link, onlylink=False):
         blink = await antibypass(link)
     elif bool(match(r"https?:\/\/(www\.)?gplinks\.(co|in)\S*", link)):
         blink = await gplinks(link)
+    elif bool(match(r"https?:\/\/(?:www\.)?cyberloom\.best\/l\/\S+", link)):
+        blink = await cyberloom(link)
     elif bool(match(r"https?:\/\/ouo\.\S+", link)):
         blink = await ouo(link)
     elif bool(match(r"https?:\/\/(shareus|shrs)\.\S+", link)):

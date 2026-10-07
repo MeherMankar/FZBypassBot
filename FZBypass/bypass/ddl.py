@@ -743,6 +743,47 @@ async def gplinks(url: str) -> str:
         raise DDLException(f"gplinks: {type(e).__name__} — {e}") from e
 
 
+async def cyberloom(url: str) -> str:
+    """Follow CyberLoom's redirect and extract the signed MessyCloud link."""
+    def _run_sync() -> str:
+        session = Session()
+        session.headers["User-Agent"] = _MOBILE_UA
+        try:
+            response = session.get(url, timeout=30, allow_redirects=True)
+            response.raise_for_status()
+            for _ in range(5):
+                soup = BeautifulSoup(response.text, "html.parser")
+                for anchor in soup.find_all("a", href=True):
+                    href = anchor["href"].strip()
+                    host = (urlparse(href).hostname or "").lower()
+                    if (
+                        href.startswith(("http://", "https://"))
+                        and host not in {
+                            "messycloud.ink",
+                            "www.messycloud.ink",
+                            "cyberloom.best",
+                            "www.cyberloom.best",
+                        }
+                        and not href.rstrip("/").endswith(("/out", "/go"))
+                    ):
+                        return href
+                next_link = soup.select_one("a#cta[href], a[href*='/out?']")
+                if not next_link:
+                    break
+                response = session.get(
+                    next_link["href"], headers={"Referer": response.url},
+                    timeout=30, allow_redirects=True,
+                )
+                response.raise_for_status()
+            raise DDLException("CyberLoom: signed download link not found")
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"CyberLoom: {type(e).__name__}") from e
+
+    return await _to_thread(_run_sync)
+
+
 async def transcript(url: str, DOMAIN: str, ref: str, sltime: float) -> str:
     """
     Generic countdown-shortener bypass using httpx.

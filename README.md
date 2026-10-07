@@ -116,6 +116,7 @@
 | `filmycab.fyi` | In progress (FilmyFly-compatible Linkmake/filesdl scraper; live host reset) | 07-10-2026 |
 | `*.drivehub.dad` | Peak Turnstile secure-mirror resolver (live flow unverified) | 07-10-2026 |
 | `*.vifix.site/file/...` | Working (delegates to matching `new4.gdflix.io` file) | 07-10-2026 |
+| `cyberloom.best/l/...` | Working (redirect chain + signed CDN link) | 07-10-2026 |
 | `link.xdmovies.wtf` | Peak Turnstile attempted; downstream still Cloudflare-protected | 07-10-2026 |
 | `buzzheavier.com` | Working (`/download` + `Hx-Redirect`) | 07-10-2026 |
 | `vikingfile.com` | Peak Turnstile resolver | 07-10-2026 |

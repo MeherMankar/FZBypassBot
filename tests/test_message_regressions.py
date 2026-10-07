@@ -317,6 +317,17 @@ class TestMessageRegressionCases(unittest.IsolatedAsyncioTestCase):
             "https://new4.gdflix.io/file/a20F3BlOJonUC6F"
         )
 
+    async def test_cyberloom_uses_resolver(self):
+        link = "https://www.cyberloom.best/l/jZh74nCt"
+        with patch(
+            "FZBypass.bypass.checker.cyberloom",
+            new=AsyncMock(return_value="https://cdn.example/file.mkv"),
+        ) as resolver:
+            result = await direct_link_checker(link, onlylink=True)
+
+        self.assertEqual(result, "https://cdn.example/file.mkv")
+        resolver.assert_awaited_once_with(link)
+
     async def test_xdmovies_uses_resolver(self):
         with patch(
             "FZBypass.bypass.checker.xdmovies",

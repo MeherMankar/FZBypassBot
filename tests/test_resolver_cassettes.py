@@ -10,6 +10,7 @@ from FZBypass.bypass.ddl import (
     _is_manual_partner_ad_gate,
     _is_partner_chain_shortener_url,
     arolinks,
+    cyberloom,
     buzzheavier,
     extralink,
     hubcdn,
@@ -250,6 +251,38 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_url)
         session.post.assert_called_once()
+
+
+class TestCyberLoomResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_extracts_signed_download_link(self):
+        response = SimpleNamespace(
+            text=(
+                '<a id="cta" href="https://www.cyberloom.best/out?t=abc">'
+                "Continue</a>"
+            ),
+            status_code=200,
+            url="https://www.messycloud.ink/eCCGuYUm0uFN",
+            raise_for_status=lambda: None,
+        )
+        final_response = SimpleNamespace(
+            text=(
+                '<a href="https://cdn.juicybits.site/files/movie.mkv?token=abc">'
+                "Download</a>"
+            ),
+            status_code=200,
+            url="https://www.messycloud.ink/final",
+            raise_for_status=lambda: None,
+        )
+        session = MagicMock()
+        session.get.side_effect = [response, final_response]
+
+        with patch("FZBypass.bypass.ddl.Session", return_value=session):
+            result = await cyberloom("https://www.cyberloom.best/l/jZh74nCt")
+
+        self.assertEqual(
+            result,
+            "https://cdn.juicybits.site/files/movie.mkv?token=abc",
+        )
 
 
 class TestExtraFlixResolver(unittest.IsolatedAsyncioTestCase):
