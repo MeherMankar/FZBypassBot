@@ -1,5 +1,7 @@
 aiohttp
 bs4
+cfscrape
+cloudscraper
 cloudscraper-turnstile
 curl_cffi
 httpx

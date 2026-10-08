@@ -21,6 +21,7 @@ from FZBypass.bypass.ddl import (
     mediafire,
     pixeldrain,
     vcloud,
+    vplink,
     xdmovies,
     vikingfile,
 )
@@ -138,6 +139,14 @@ class TestPartnerChainUrl(unittest.TestCase):
 
         self.assertFalse(_is_manual_partner_ad_gate(html))
 
+    def test_detects_partner_ad_gate_without_step_counter(self):
+        html = """
+        <p>Click on the Ads to continue browsing. (Support the Developer)</p>
+        <p>Click Image &amp; Wait &amp; Come back this page to Get Link</p>
+        """
+
+        self.assertTrue(_is_manual_partner_ad_gate(html))
+
     def test_extracts_arolinks_partner_cta(self):
         html = (
             '<a href="https://techmint.in/studyeducations/'
@@ -179,6 +188,109 @@ class TestPartnerChainUrl(unittest.TestCase):
         self.assertTrue(_is_partner_chain_shortener_url("https://arolinks.com/IENOLw"))
         self.assertTrue(_is_partner_chain_shortener_url("https://vplinks.in/tu8au"))
         self.assertFalse(_is_partner_chain_shortener_url("https://techmint.in/article"))
+
+
+class TestVplinkResolver(unittest.IsolatedAsyncioTestCase):
+    async def test_resolves_via_learn_more_chain(self):
+        """New flow: vplink → techmint studyeducations → article → learn_more.php x2
+        → studyeducations?educationsuniversities → article2 → vplink (form) → /links/go"""
+
+        def response(url, text="", content=None):
+            return SimpleNamespace(
+                status_code=200,
+                text=text,
+                content=content if content is not None else text.encode(),
+                url=url,
+            )
+
+        short_url   = "https://vplink.in/J8pR7O1y"
+        partner_url = (
+            "https://techmint.in/studyinsurances/studyeducations/"
+            "?insurancesstudy=J8pR7O1y&uiso=21720"
+        )
+        article1    = "https://techmint.in/studyinsurances/best-health-insurance-2026/"
+        lm_url      = "https://techmint.in/studyinsurances/learn_more.php"
+        tl2_url     = (
+            "https://techmint.in/studyinsurances/studyeducations/"
+            "?educationsuniversities=J8pR7O1y"
+        )
+        article2    = "https://techmint.in/studyinsurances/best-online-mba-2026/"
+        dest        = "https://t.me/examplebot?start=TOKEN"
+
+        session = MagicMock()
+        session.headers = MagicMock()
+        session.headers.update = MagicMock()
+        # GET side_effect order:
+        # 1. vplink initial  → Please Wait + techmint partner URL
+        # 2. techmint landing → JS redirect to article1
+        # 3. article1
+        # 4. learn_more.php (x2)
+        # 5. learn_more.php
+        # 6. studyeducations?educationsuniversities → JS redirect to article2
+        # 7. article2
+        # 8. vplink second → go-link form
+        session.get.side_effect = [
+            response(
+                short_url,
+                f'<script>window.location.href = "{partner_url}";</script>',
+            ),
+            response(
+                partner_url,
+                f'<script>window.location.href = "{article1}";</script>',
+            ),
+            response(article1, "<p>Article content</p>"),
+            response(lm_url, ""),
+            response(lm_url, ""),
+            response(
+                tl2_url,
+                f'<script>window.location.href = "{article2}";</script>',
+            ),
+            response(article2, "<p>Article 2 content</p>"),
+            response(
+                short_url,
+                '<form id="go-link" action="/links/go">'
+                '<input name="_csrfToken" value="testtoken">'
+                '<input name="ad_form_data" value="testdata"></form>',
+            ),
+        ]
+        session.post.return_value = response(
+            "https://vplink.in/links/go",
+            content=f'{{"url":"{dest}"}}'.encode(),
+        )
+
+        with patch("FZBypass.bypass.ddl.cSession", return_value=session):
+            result = await vplink(short_url)
+
+        self.assertEqual(result, dest)
+        session.post.assert_called_once()
+
+    async def test_returns_gt_link_directly(self):
+        """Fast path: vplink serves gt-link immediately (cached / unprotected)."""
+
+        def response(url, text=""):
+            return SimpleNamespace(
+                status_code=200, text=text,
+                content=text.encode(), url=url,
+            )
+
+        short_url = "https://vplink.in/fupS"
+        dest      = "https://t.me/somebot?start=XYZ"
+
+        session = MagicMock()
+        session.headers = MagicMock()
+        session.headers.update = MagicMock()
+        session.get.side_effect = [
+            response(
+                short_url,
+                f'<a id="gt-link" href="{dest}">Get Link</a>',
+            ),
+        ]
+
+        with patch("FZBypass.bypass.ddl.cSession", return_value=session):
+            result = await vplink(short_url)
+
+        self.assertEqual(result, dest)
+        self.assertEqual(session.get.call_count, 1)
 
 
 class TestGDFlixCassette(unittest.IsolatedAsyncioTestCase):
@@ -256,7 +368,7 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("requests.Session", return_value=session),
-            patch("curl_cffi.requests.Session", return_value=session),
+            patch("cloudscraper.create_scraper", return_value=session),
         ):
             result = await arolinks(short_url)
 
@@ -318,8 +430,7 @@ class TestArolinksResolver(unittest.IsolatedAsyncioTestCase):
         )
         with (
             patch("requests.Session", return_value=session),
-            patch("requests.Session", return_value=session),
-            patch("curl_cffi.requests.Session", return_value=session),
+            patch("cloudscraper.create_scraper", return_value=session),
         ):
             result = await arolinks(short_url)
 

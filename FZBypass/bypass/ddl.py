@@ -1724,10 +1724,21 @@ def _is_partner_chain_shortener_url(url: str) -> bool:
 def _is_manual_partner_ad_gate(html_text: str) -> bool:
     page_text = " ".join(BeautifulSoup(html_text, "html.parser").stripped_strings)
     normalized = " ".join(page_text.casefold().split())
-    has_step_counter = bool(_re.search(r"currently on step\s+\d+\s*/\s*\d+", normalized))
-    requires_ad_click = "click any image" in normalized or "click image" in normalized
-    requires_return = "come back" in normalized or "return to this page" in normalized
-    return has_step_counter and requires_ad_click and requires_return
+    requires_ad_click = any(
+        phrase in normalized
+        for phrase in (
+            "click any image",
+            "click image",
+            "click on the ads",
+            "click the ads",
+            "click ads",
+        )
+    )
+    requires_return = any(
+        phrase in normalized
+        for phrase in ("come back", "return to this page", "back to this page")
+    )
+    return requires_ad_click and requires_return
 
 
 def _extract_vplink_partner_url(html_text: str, page_url: str) -> str | None:
@@ -1769,11 +1780,19 @@ def _extract_vplink_partner_url(html_text: str, page_url: str) -> str | None:
 
 async def vplink(url: str) -> str:
     """
-    vplink.in / vplinks.in — bypass via entiredust.in Referer + gt_uc_ cookie.
+    vplink.in / vplinks.in — partner-chain bypass via techmint learn_more.php.
 
-    The server returns the unlock page (gt-link anchor or go-link form) when
-    the request carries a Chrome TLS fingerprint, the gt_uc_=<code> cookie,
-    and one of the trusted entiredust.in article referers.
+    Flow (discovered via CDP spy on 08-10-2026):
+      1. GET vplink.in/<code>      → "Please Wait"; sets cookies; returns techmint URL
+      2. GET techmint.in/<sub>/studyeducations/?insurancesstudy=<code>&uiso=<n>
+                                   → JS redirect to article 1
+      3. GET article 1
+      4. GET techmint.in/<sub>/learn_more.php  × 2  (article XHR — unlocks session)
+      5. GET techmint.in/<sub>/studyeducations/?educationsuniversities=<code>
+                                   → JS redirect to article 2
+      6. GET article 2
+      7. GET vplink.in/<code>      → go-link form is now served
+      8. POST vplink.in/links/go   → {"url": "https://t.me/..."}
     """
     _shortcode = url.rstrip("/").split("/")[-1]
 
@@ -1823,85 +1842,203 @@ async def vplink(url: str) -> str:
 
     def _run_sync() -> str:
         import time as _time
-        for referer in _REFERERS:
+        import cloudscraper as _cs
+
+        vplink_base = "https://vplink.in"
+        vplink_url  = f"{vplink_base}/{_shortcode}"
+
+        # ── Attempt A: cloudscraper (solves CF JS challenges via Node.js) ─────
+        # This used to work when vplink used the IUAM 5-second challenge.
+        # Try it first — if it returns the go-link form directly, we're done.
+        try:
+            _cs_sess = _cs.create_scraper(
+                browser={"browser": "chrome", "platform": "windows", "mobile": False}
+            )
+            _cs_r = _cs_sess.get(vplink_url, timeout=45)
+            if _cs_r.status_code == 200:
+                _cs_soup = BeautifulSoup(_cs_r.text, "html.parser")
+                _cs_anchor = _cs_soup.find(
+                    "a", id="gt-link",
+                    href=lambda h: h and h.startswith("http"),
+                )
+                if _cs_anchor and "vplink.in" not in _cs_anchor["href"]:
+                    return _cs_anchor["href"]
+                _cs_form = _cs_soup.select_one("form#go-link")
+                if _cs_form:
+                    _cs_action = _cs_form.get("action", "")
+                    if not _cs_action.startswith("http"):
+                        _cs_action = f"{vplink_base}{_cs_action}"
+                    _cs_fields = {
+                        f["name"]: f.get("value", "")
+                        for f in _cs_form.find_all("input")
+                        if f.get("name")
+                    }
+                    _cs_sub = _cs_sess.post(
+                        _cs_action, data=_cs_fields,
+                        headers={"Referer": vplink_url,
+                                 "X-Requested-With": "XMLHttpRequest"},
+                        timeout=30,
+                    )
+                    _cs_payload = _json.loads(_cs_sub.content)
+                    _cs_dest = (
+                        _cs_payload.get("url")
+                        or _cs_payload.get("link")
+                        or _cs_payload.get("data")
+                    )
+                    if _cs_dest:
+                        return _cs_dest
+        except Exception:
+            pass  # Fall through to curl_cffi chain
+
+        # ── Attempt B: curl_cffi + full partner chain ─────────────────────────
+        sess = cSession(impersonate="chrome136")
+        sess.headers.update({
+            "User-Agent": _UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+
+        # ── Step 1: GET vplink → sets AppSession / refXXX / gt_uc_ cookies ──
+        try:
+            r1 = sess.get(vplink_url, timeout=30)
+        except Exception as e:
+            raise DDLException(f"vplink: initial GET failed — {e}") from e
+
+        if r1.status_code != 200:
+            raise DDLException(f"vplink: HTTP {r1.status_code}")
+
+        # Fast path: go-link form already in page (cached / unprotected link)
+        s1 = BeautifulSoup(r1.text, "html.parser")
+        anchor = s1.find("a", id="gt-link", href=lambda h: h and h.startswith("http"))
+        if anchor and "vplink.in" not in anchor["href"]:
+            return anchor["href"]
+
+        # Extract techmint partner URL from "Please Wait" page
+        tm_url = _extract_vplink_partner_url(r1.text, str(r1.url))
+        if not tm_url or "techmint.in" not in tm_url:
+            raise DDLException("vplink: techmint partner URL not found in Please Wait page")
+
+        # Extract the subdirectory and uiso from the techmint URL
+        # e.g. https://techmint.in/studyinsurances/studyeducations/?insurancesstudy=J8pR7O1y&uiso=21720
+        from urllib.parse import urlparse as _up2, urlencode as _ue, parse_qs as _pq
+        tm_parsed  = _up2(tm_url)
+        tm_origin  = f"{tm_parsed.scheme}://{tm_parsed.netloc}"
+        # First path segment is the subdirectory (e.g. "studyinsurances", "studyeducations")
+        path_parts = [p for p in tm_parsed.path.strip("/").split("/") if p]
+        tm_subdir  = path_parts[0] if path_parts else ""  # e.g. "studyinsurances"
+        if not tm_subdir:
+            raise DDLException(f"vplink: unexpected techmint URL format — {tm_url}")
+
+        tm_base = f"{tm_origin}/{tm_subdir}"  # e.g. https://techmint.in/studyinsurances
+
+        # ── Step 2: GET techmint landing (studyeducations?insurancesstudy=...) ──
+        try:
+            r2 = sess.get(tm_url, headers={"Referer": vplink_url}, timeout=30)
+        except Exception as e:
+            raise DDLException(f"vplink: techmint landing failed — {e}") from e
+
+        art1_url = _extract_vplink_partner_url(r2.text, str(r2.url))
+        if not art1_url or "techmint.in" not in art1_url:
+            raise DDLException("vplink: techmint article 1 URL not found")
+
+        # ── Step 3: GET article 1 ─────────────────────────────────────────────
+        try:
+            sess.get(art1_url, headers={"Referer": tm_url}, timeout=20)
+        except Exception:
+            pass
+
+        # ── Step 4: GET learn_more.php TWICE (article XHR — unlocks session) ──
+        lm_url = f"{tm_base}/learn_more.php"
+        for _ in range(2):
             try:
-                sess = cSession(impersonate="chrome120")
-                sess.cookies.update({"gt_uc_": _shortcode})
-                page = sess.get(
-                    f"https://vplink.in/{_shortcode}",
-                    headers={
-                        "User-Agent": _UA,
-                        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
-                        "Accept-Language": "en-US,en;q=0.5",
-                        "Referer": referer,
-                    },
-                    timeout=30,
-                )
-            except Exception:
-                continue
-
-            if page.status_code != 200:
-                continue
-
-            page_soup = BeautifulSoup(page.text, "html.parser")
-
-            # Fast path — destination already in page as a direct link
-            anchor = page_soup.find("a", id="gt-link")
-            if anchor:
-                href = anchor.get("href", "")
-                if href.startswith("http") and "vplink.in" not in href:
-                    # Resolve antibypass URLs inline using the current session
-                    from urllib.parse import urlparse as _up_ab
-                    ab_host = (_up_ab(href).hostname or "").lstrip("www.")
-                    if ab_host in _ANTIBYPASS_HOSTS:
-                        final = _resolve_antibypass(sess, href, f"https://vplink.in/{_shortcode}")
-                        if final:
-                            return final
-                    return href
-
-            # Standard go-link form
-            unlock_form = page_soup.find("form", id="go-link")
-            if not unlock_form:
-                continue
-
-            _time.sleep(7)
-
-            form_action = unlock_form.get("action", "")
-            if not form_action.startswith("http"):
-                form_action = f"https://vplink.in{form_action}"
-
-            form_fields = {
-                field["name"]: field.get("value", "")
-                for field in unlock_form.find_all("input")
-                if field.get("name")
-            }
-
-            try:
-                submit = sess.post(
-                    form_action,
-                    data=form_fields,
-                    headers={
-                        "Referer": str(page.url),
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    timeout=30,
-                )
-                payload = _json.loads(submit.content)
-                destination = (
-                    payload.get("url") or payload.get("link") or payload.get("data")
-                )
-                if destination:
-                    return destination
+                sess.get(lm_url, headers={"Referer": art1_url}, timeout=15)
             except Exception:
                 pass
 
-            # Last resort: scan HTML for known destination URL patterns
-            match = _DEST_PAT.search(page.text)
-            if match:
-                return match.group(1)
+        # ── Step 5: GET studyeducations?educationsuniversities=<code> ─────────
+        # This is the second partner landing (no uiso, different param name)
+        tl2_url = f"{tm_base}/studyeducations/?educationsuniversities={_shortcode}"
+        try:
+            r5 = sess.get(tl2_url, headers={"Referer": art1_url}, timeout=20)
+        except Exception:
+            r5 = None
 
-        raise DDLException("vplink: bypass failed — all referers exhausted")
+        art2_url = _extract_vplink_partner_url(r5.text if r5 else "", tl2_url) if r5 else None
+
+        # ── Step 6: GET article 2 ─────────────────────────────────────────────
+        if art2_url and "techmint.in" in art2_url:
+            try:
+                sess.get(art2_url, headers={"Referer": tl2_url}, timeout=20)
+            except Exception:
+                pass
+
+        # ── Step 7: GET vplink again — should now serve the go-link form ──────
+        try:
+            r7 = sess.get(vplink_url, headers={"Referer": art2_url or art1_url}, timeout=30)
+        except Exception as e:
+            raise DDLException(f"vplink: second GET failed — {e}") from e
+
+        s7 = BeautifulSoup(r7.text, "html.parser")
+
+        # Fast path: gt-link already resolved
+        anchor7 = s7.find("a", id="gt-link", href=lambda h: h and h.startswith("http"))
+        if anchor7 and "vplink.in" not in anchor7["href"]:
+            href7 = anchor7["href"]
+            from urllib.parse import urlparse as _up_ab7
+            ab_host7 = (_up_ab7(href7).hostname or "").lstrip("www.")
+            if ab_host7 in _ANTIBYPASS_HOSTS:
+                final7 = _resolve_antibypass(sess, href7, vplink_url)
+                if final7:
+                    return final7
+            return href7
+
+        unlock_form = s7.find("form", id="go-link")
+        if not unlock_form:
+            raise DDLException(
+                "vplink: CF Rocket Loader gates the unlock JS — cf_clearance "
+                "requires a real browser; partner chain completes but vplink "
+                "bot-score check cannot be passed via HTTP"
+            )
+
+        # ── Step 8: POST /links/go ────────────────────────────────────────────
+        form_action = unlock_form.get("action", "")
+        if not form_action.startswith("http"):
+            form_action = f"{vplink_base}{form_action}"
+
+        form_fields = {
+            field["name"]: field.get("value", "")
+            for field in unlock_form.find_all("input")
+            if field.get("name")
+        }
+
+        # The counter_value on vplink is typically 0 or absent; no sleep needed
+        counter_m = _re.search(r'"counter_value"\s*:\s*(\d+)', r7.text)
+        counter = int(counter_m.group(1)) if counter_m else 0
+        if counter > 0:
+            _time.sleep(counter + 1)
+
+        try:
+            submit = sess.post(
+                form_action,
+                data=form_fields,
+                headers={
+                    "Referer": str(r7.url),
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                timeout=30,
+            )
+            payload = _json.loads(submit.content)
+            destination = (
+                payload.get("url") or payload.get("link") or payload.get("data")
+            )
+            if destination:
+                return destination
+            raise DDLException(f"vplink: /links/go returned no URL — {payload}")
+        except DDLException:
+            raise
+        except Exception as e:
+            raise DDLException(f"vplink: form submit failed — {e}") from e
 
     try:
         return await _to_thread(_run_sync)
@@ -2037,10 +2174,14 @@ async def arolinks(url: str) -> str:
         s.get("https://onlinewish.in/readmore/",
               headers={"Referer": ow_art or ow1}, timeout=15)
 
-        # Step 7: hit arolinks with onlinewish.in referer via curl_cffi
-        # (CF bot-score check requires a real Chrome TLS fingerprint)
-        from curl_cffi.requests import Session as _CurlSess2
-        sess = _CurlSess2(impersonate="chrome136")
+        # Step 7: hit arolinks with onlinewish.in referer via cloudscraper.
+        # cloudscraper attempts to execute Cloudflare's JS challenge (via Node.js
+        # or its built-in interpreter) which gets past the CF bot score gate that
+        # blocks plain HTTP clients and curl_cffi on this final page.
+        import cloudscraper as _cs
+        sess = _cs.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
         # Transfer arolinks cookies from the requests session
         for cookie in s.cookies:
             if "arolinks" in (cookie.domain or ""):

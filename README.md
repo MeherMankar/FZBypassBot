@@ -74,8 +74,8 @@ Provider matching is suffix-agnostic for supported branded hostnames: changing a
 | `surl.li` | Untested | — |
 | `thinfi.com` | Untested | — |
 | `try2link.com` | Untested | — |
-| `vplink.in` · `vplinks.in` | Working | 02-10-2026 |
-| `arolinks.com` | Working (partner-chain resolver; Telegram deep links) | 07-10-2026 |
+| `vplink.in` · `vplinks.in` | Broken (CF Rocket Loader gates unlock JS on the final vplink page; partner chain techmint→bcsakhi completes correctly but cf_clearance cookie requires a real browser) | 08-10-2026 |
+| `arolinks.com` | Broken (Cloudflare Bot Management upgraded — JS challenge now mandatory on every visit, cloudscraper's IUAM solver insufficient) | 08-10-2026 |
 | `antibypass.koyeb.app` | Working (JS `finalUrl` extraction via vplink.in referer) | 07-10-2026 |
 | `exeygo.com` | Partial (CakePHP adLinkFly; Turnstile POST returns 500 — not fully bypassable) | 07-10-2026 |
 | `get-to.link` | Working (Peak-backed Cloudflare continuation + download mirrors) | 07-10-2026 |
